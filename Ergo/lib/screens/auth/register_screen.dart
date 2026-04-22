@@ -102,7 +102,7 @@ class _RegisterScreenState extends State<RegisterScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Account created successfully! Welcome to SkillConnect.',
+            content: Text('Account created successfully! Welcome to Ergo.',
                 style: GoogleFonts.inter()),
             backgroundColor: AppColors.success,
             behavior: SnackBarBehavior.floating,
@@ -217,7 +217,7 @@ class _RegisterScreenState extends State<RegisterScreen>
                             ),
                             const SizedBox(width: 8),
                             Text(
-                              'SkillConnect',
+                              'Ergo',
                               style: GoogleFonts.inter(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w700,

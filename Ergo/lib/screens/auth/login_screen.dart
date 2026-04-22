@@ -141,7 +141,7 @@ class _LoginScreenState extends State<LoginScreen>
                         ),
                         const SizedBox(width: 10),
                         Text(
-                          'SkillConnect',
+                          'Ergo',
                           style: GoogleFonts.inter(
                             fontSize: 18,
                             fontWeight: FontWeight.w700,
@@ -160,7 +160,7 @@ class _LoginScreenState extends State<LoginScreen>
                     const SizedBox(height: 32),
 
                     // ── Network Badge ──
-                    const AppBrandBadge(text: 'The SkillConnect Network'),
+                    const AppBrandBadge(text: 'The Ergo Network'),
                     const SizedBox(height: 20),
 
                     // ── Welcome Heading ──
@@ -359,7 +359,7 @@ class _LoginScreenState extends State<LoginScreen>
 
                           // ── Login Button ──
                           PrimaryButton(
-                            label: 'Login to SkillConnect',
+                            label: 'Login to Ergo',
                             onPressed: _handleLogin,
                             isLoading: _isLoading,
                             icon: Icons.login_rounded,
@@ -431,7 +431,7 @@ class _LoginScreenState extends State<LoginScreen>
                     // ── Footer ──
                     Center(
                       child: Text(
-                        '© 2024 SkillConnect • Professional Craft Excellence',
+                        '© 2024 Ergo • Professional Craft Excellence',
                         style: GoogleFonts.inter(
                           fontSize: 11,
                           color: AppColors.textHint,

@@ -8,8 +8,7 @@ import 'screens/auth/login_screen.dart';
 import 'screens/home/home_screen.dart';
 import 'theme/app_theme.dart';
 
-// TODO: Replace with your Firebase options after running `flutterfire configure`
-// import 'firebase_options.dart';
+import 'firebase_options.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -31,21 +30,20 @@ Future<void> main() async {
   );
 
   // Initialize Firebase
-  // TODO: Uncomment after running `flutterfire configure && flutter pub get`
-  // await Firebase.initializeApp(
-  //   options: DefaultFirebaseOptions.currentPlatform,
-  // );
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
 
-  runApp(const SkillConnectApp());
+  runApp(const ErgoApp());
 }
 
-class SkillConnectApp extends StatelessWidget {
-  const SkillConnectApp({super.key});
+class ErgoApp extends StatelessWidget {
+  const ErgoApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'SkillConnect',
+      title: 'Ergo',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
       // Auth state router - once Firebase is initialized, use StreamBuilder

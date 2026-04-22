@@ -26,7 +26,7 @@ class HomeScreen extends StatelessWidget {
             ),
             const SizedBox(width: 8),
             Text(
-              'SkillConnect',
+              'Ergo',
               style: GoogleFonts.inter(
                 fontSize: 18,
                 fontWeight: FontWeight.w700,
