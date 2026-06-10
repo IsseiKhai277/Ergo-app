@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../theme/app_theme.dart';
 import '../home/home_screen.dart';
-import '../jobs/post_job_screen.dart';
+import '../feed/ergo_feed_screen.dart';
+import '../messages/messages_screen.dart';
 import '../profile/profile_screen.dart';
 
 class MainScreen extends StatefulWidget {
@@ -14,26 +15,19 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
 
-  // The pages for each bottom navigation tab. We use an empty container for index 2 since it opens a new screen.
+  // The pages for each bottom navigation tab.
   final List<Widget> _pages = [
-    const HomeScreen(), // 0: Bulletin Board
+    const HomeScreen(),         // 0: Bulletin Board
     const Center(child: Text('Search (Coming Soon)')), // 1
-    const SizedBox(), // 2: Post Job (Intercepted in onTap)
-    const Center(child: Text('Messages (Coming Soon)')), // 3
-    const ProfileScreen(), // 4: Profile
+    const ErgoFeedScreen(),     // 2: What's Up / Ergo Feed
+    const MessagesScreen(),     // 3: Messages
+    const ProfileScreen(),      // 4: Profile
   ];
 
   void _onItemTapped(int index) {
-    if (index == 2) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => const PostJobScreen()),
-      );
-    } else {
-      setState(() {
-        _currentIndex = index;
-      });
-    }
+    setState(() {
+      _currentIndex = index;
+    });
   }
 
   @override
@@ -67,16 +61,9 @@ class _MainScreenState extends State<MainScreen> {
               icon: Icon(Icons.search_rounded),
               label: 'Search',
             ),
-            BottomNavigationBarItem(
-              icon: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: const BoxDecoration(
-                  color: Colors.green,
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.add, color: Colors.white, size: 24),
-              ),
-              label: 'Post',
+            const BottomNavigationBarItem(
+              icon: Icon(Icons.whatshot_rounded),
+              label: "What's Up",
             ),
             const BottomNavigationBarItem(
               icon: Icon(Icons.message_rounded),

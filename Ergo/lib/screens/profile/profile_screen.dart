@@ -1,10 +1,14 @@
 import 'dart:io';
+import 'dart:convert';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_rating_bar/flutter_rating_bar.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:percent_indicator/percent_indicator.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:timeago/timeago.dart' as timeago;
 import '../../providers/profile_provider.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/profile_avatar.dart';
@@ -358,6 +362,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
                       // Resume Section
                       _buildResumeSection(context, provider, profile),
+                      const SizedBox(height: 20),
+
+                      // My Posts Section
+                      _buildMyPostsSection(context),
                     ],
                   ),
                 ),
@@ -878,6 +886,163 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ],
       ),
     );
+  }
+
+  // ─── My Posts Section ─────────────────────────────────────────────────────
+  Widget _buildMyPostsSection(BuildContext context) {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return const SizedBox.shrink();
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.cardBorder),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SectionHeader(title: 'My Posts'),
+          const SizedBox(height: 8),
+          StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('posts')
+                .where('userId', isEqualTo: uid)
+                .snapshots(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(24),
+                    child: CircularProgressIndicator(color: AppColors.primary),
+                  ),
+                );
+              }
+              if (snapshot.hasError) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  child: Text(
+                    'Error loading posts: ${snapshot.error}',
+                    style: GoogleFonts.inter(fontSize: 12, color: AppColors.error),
+                  ),
+                );
+              }
+              final docs = snapshot.data?.docs ?? [];
+              // Sort by createdAt descending in Dart to avoid needing a composite index
+              docs.sort((a, b) {
+                final aTime = (a.data() as Map<String, dynamic>)['createdAt'] as Timestamp?;
+                final bTime = (b.data() as Map<String, dynamic>)['createdAt'] as Timestamp?;
+                if (aTime == null || bTime == null) return 0;
+                return bTime.compareTo(aTime);
+              });
+              if (docs.isEmpty) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  child: Center(
+                    child: Text(
+                      'No posts yet. Share something on Ergo Feed!',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.inter(
+                        fontSize: 13,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ),
+                );
+              }
+              return ListView.separated(
+                physics: const NeverScrollableScrollPhysics(),
+                shrinkWrap: true,
+                itemCount: docs.length,
+                separatorBuilder: (_, __) => const Divider(color: AppColors.outline, height: 1),
+                itemBuilder: (_, i) {
+                  final data = docs[i].data() as Map<String, dynamic>;
+                  final imageUrls = List<String>.from(data['imageUrls'] ?? []);
+                  final caption = (data['caption'] ?? '') as String;
+                  final createdAt = (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now();
+                  final likeCount = data['likeCount'] ?? 0;
+                  final commentCount = data['commentCount'] ?? 0;
+
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (imageUrls.isNotEmpty) ...[
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(10),
+                            child: _decodeImage(imageUrls.first),
+                          ),
+                          const SizedBox(height: 8),
+                        ],
+                        if (caption.isNotEmpty)
+                          Text(
+                            caption,
+                            style: GoogleFonts.inter(
+                              fontSize: 14,
+                              color: AppColors.textPrimary,
+                              height: 1.5,
+                            ),
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            const Icon(Icons.favorite_border, size: 14, color: AppColors.textSecondary),
+                            const SizedBox(width: 4),
+                            Text('$likeCount', style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary)),
+                            const SizedBox(width: 12),
+                            const Icon(Icons.chat_bubble_outline, size: 14, color: AppColors.textSecondary),
+                            const SizedBox(width: 4),
+                            Text('$commentCount', style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary)),
+                            const Spacer(),
+                            Text(
+                              timeago.format(createdAt),
+                              style: GoogleFonts.inter(fontSize: 11, color: AppColors.textHint),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _decodeImage(String source) {
+    try {
+      if (source.startsWith('http')) {
+        return Image.network(
+          source,
+          width: double.infinity,
+          fit: BoxFit.contain,
+          errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+        );
+      } else {
+        return Image.memory(
+          base64Decode(source),
+          width: double.infinity,
+          fit: BoxFit.contain,
+          errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+        );
+      }
+    } catch (_) {
+      return const SizedBox.shrink();
+    }
   }
 }
 

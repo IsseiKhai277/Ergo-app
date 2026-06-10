@@ -17,6 +17,17 @@ class HomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const PostJobScreen()),
+          );
+        },
+        backgroundColor: Colors.green,
+        foregroundColor: Colors.white,
+        child: const Icon(Icons.add, size: 28),
+      ),
       appBar: AppBar(
         backgroundColor: AppColors.surface,
         elevation: 0,
@@ -67,9 +78,13 @@ class HomeScreen extends StatelessWidget {
 
           if (snapshot.hasError) {
             return Center(
-              child: Text(
-                'Error loading jobs',
-                style: GoogleFonts.inter(color: AppColors.error),
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Text(
+                  'Error loading jobs:\n${snapshot.error}',
+                  style: GoogleFonts.inter(color: AppColors.error),
+                  textAlign: TextAlign.center,
+                ),
               ),
             );
           }
