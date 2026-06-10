@@ -106,9 +106,15 @@ class AuthService {
       'email': email,
       'role': role.name, // 'worker' or 'client'
       'photoUrl': photoUrl ?? '',
-      'isProfileComplete': false,
+      'phoneNumber': '',
+      'bio': '',
+      'skills': [],
+      'resumeUrl': '',
       'rating': 0.0,
       'reviewCount': 0,
+      'verified': false,
+      'profileComplete': false,
+      'isProfileComplete': false,
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     });

@@ -22,7 +22,6 @@ class _RegisterScreenState extends State<RegisterScreen>
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
 
-  String _selectedRole = 'worker';
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
   bool _agreedToTerms = false;
@@ -78,8 +77,10 @@ class _RegisterScreenState extends State<RegisterScreen>
     if (!_formKey.currentState!.validate()) return;
 
     if (!_agreedToTerms) {
-      setState(() => _errorMessage =
-          'Please agree to the Terms of Service and Privacy Policy.');
+      setState(
+        () => _errorMessage =
+            'Please agree to the Terms of Service and Privacy Policy.',
+      );
       return;
     }
 
@@ -89,21 +90,20 @@ class _RegisterScreenState extends State<RegisterScreen>
     });
 
     try {
-      final role =
-          _selectedRole == 'worker' ? UserRole.worker : UserRole.client;
-
       await AuthService.signUpWithEmail(
         fullName: _nameController.text,
         email: _emailController.text,
         password: _passwordController.text,
-        role: role,
+        role: UserRole.client,
       );
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Account created successfully! Welcome to Ergo.',
-                style: GoogleFonts.inter()),
+            content: Text(
+              'Account created successfully! Welcome to Ergo.',
+              style: GoogleFonts.inter(),
+            ),
             backgroundColor: AppColors.success,
             behavior: SnackBarBehavior.floating,
           ),
@@ -120,8 +120,10 @@ class _RegisterScreenState extends State<RegisterScreen>
 
   Future<void> _handleGoogleSignUp() async {
     if (!_agreedToTerms) {
-      setState(() => _errorMessage =
-          'Please agree to the Terms of Service and Privacy Policy.');
+      setState(
+        () => _errorMessage =
+            'Please agree to the Terms of Service and Privacy Policy.',
+      );
       return;
     }
 
@@ -131,14 +133,13 @@ class _RegisterScreenState extends State<RegisterScreen>
     });
 
     try {
-      final role =
-          _selectedRole == 'worker' ? UserRole.worker : UserRole.client;
-      await AuthService.signInWithGoogle(role: role);
+      await AuthService.signInWithGoogle(role: UserRole.client);
     } on FirebaseAuthException catch (e) {
       setState(() => _errorMessage = AuthService.getErrorMessage(e));
     } catch (_) {
       setState(
-          () => _errorMessage = 'Google sign-up failed. Please try again.');
+        () => _errorMessage = 'Google sign-up failed. Please try again.',
+      );
     } finally {
       if (mounted) setState(() => _isGoogleLoading = false);
     }
@@ -196,8 +197,11 @@ class _RegisterScreenState extends State<RegisterScreen>
                     Row(
                       children: [
                         IconButton(
-                          icon: const Icon(Icons.arrow_back_ios_rounded,
-                              size: 20, color: AppColors.textPrimary),
+                          icon: const Icon(
+                            Icons.arrow_back_ios_rounded,
+                            size: 20,
+                            color: AppColors.textPrimary,
+                          ),
                           onPressed: () => Navigator.maybePop(context),
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints(),
@@ -212,8 +216,11 @@ class _RegisterScreenState extends State<RegisterScreen>
                                 color: AppColors.primary,
                                 borderRadius: BorderRadius.circular(6),
                               ),
-                              child: const Icon(Icons.hub_rounded,
-                                  color: Colors.white, size: 16),
+                              child: const Icon(
+                                Icons.hub_rounded,
+                                color: Colors.white,
+                                size: 16,
+                              ),
                             ),
                             const SizedBox(width: 8),
                             Text(
@@ -228,8 +235,11 @@ class _RegisterScreenState extends State<RegisterScreen>
                         ),
                         const Spacer(),
                         IconButton(
-                          icon: const Icon(Icons.help_outline_rounded,
-                              color: AppColors.textSecondary, size: 22),
+                          icon: const Icon(
+                            Icons.help_outline_rounded,
+                            color: AppColors.textSecondary,
+                            size: 22,
+                          ),
                           onPressed: () {},
                         ),
                       ],
@@ -276,15 +286,6 @@ class _RegisterScreenState extends State<RegisterScreen>
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // ── Role Toggle ──
-                          RoleToggle(
-                            selectedRole: _selectedRole,
-                            onRoleChanged: (r) =>
-                                setState(() => _selectedRole = r),
-                          ),
-
-                          const SizedBox(height: 24),
-
                           // ── Full Name ──
                           AppTextField(
                             label: 'Full Name',
@@ -293,8 +294,11 @@ class _RegisterScreenState extends State<RegisterScreen>
                             keyboardType: TextInputType.name,
                             prefixIcon: const Padding(
                               padding: EdgeInsets.all(12),
-                              child: Icon(Icons.person_outline_rounded,
-                                  size: 20, color: AppColors.textSecondary),
+                              child: Icon(
+                                Icons.person_outline_rounded,
+                                size: 20,
+                                color: AppColors.textSecondary,
+                              ),
                             ),
                             validator: (v) {
                               if (v == null || v.trim().isEmpty) {
@@ -317,15 +321,17 @@ class _RegisterScreenState extends State<RegisterScreen>
                             keyboardType: TextInputType.emailAddress,
                             prefixIcon: const Padding(
                               padding: EdgeInsets.all(12),
-                              child: Icon(Icons.alternate_email_rounded,
-                                  size: 20, color: AppColors.textSecondary),
+                              child: Icon(
+                                Icons.alternate_email_rounded,
+                                size: 20,
+                                color: AppColors.textSecondary,
+                              ),
                             ),
                             validator: (v) {
                               if (v == null || v.isEmpty) {
                                 return 'Please enter your email';
                               }
-                              if (!RegExp(r'^[^@]+@[^@]+\.[^@]+')
-                                  .hasMatch(v)) {
+                              if (!RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(v)) {
                                 return 'Please enter a valid email';
                               }
                               return null;
@@ -365,9 +371,11 @@ class _RegisterScreenState extends State<RegisterScreen>
                                   hintText: '••••••••',
                                   prefixIcon: const Padding(
                                     padding: EdgeInsets.all(12),
-                                    child: Icon(Icons.lock_outline_rounded,
-                                        size: 20,
-                                        color: AppColors.textSecondary),
+                                    child: Icon(
+                                      Icons.lock_outline_rounded,
+                                      size: 20,
+                                      color: AppColors.textSecondary,
+                                    ),
                                   ),
                                   suffixIcon: IconButton(
                                     icon: Icon(
@@ -378,7 +386,9 @@ class _RegisterScreenState extends State<RegisterScreen>
                                       color: AppColors.textSecondary,
                                     ),
                                     onPressed: () => setState(
-                                        () => _obscurePassword = !_obscurePassword),
+                                      () =>
+                                          _obscurePassword = !_obscurePassword,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -394,7 +404,9 @@ class _RegisterScreenState extends State<RegisterScreen>
                                           return Expanded(
                                             child: Container(
                                               height: 3,
-                                              margin: const EdgeInsets.only(right: 4),
+                                              margin: const EdgeInsets.only(
+                                                right: 4,
+                                              ),
                                               decoration: BoxDecoration(
                                                 color: i < _passwordStrength
                                                     ? _strengthColor
@@ -457,9 +469,11 @@ class _RegisterScreenState extends State<RegisterScreen>
                                   hintText: '••••••••',
                                   prefixIcon: const Padding(
                                     padding: EdgeInsets.all(12),
-                                    child: Icon(Icons.lock_outline_rounded,
-                                        size: 20,
-                                        color: AppColors.textSecondary),
+                                    child: Icon(
+                                      Icons.lock_outline_rounded,
+                                      size: 20,
+                                      color: AppColors.textSecondary,
+                                    ),
                                   ),
                                   suffixIcon: IconButton(
                                     icon: Icon(
@@ -469,9 +483,10 @@ class _RegisterScreenState extends State<RegisterScreen>
                                       size: 20,
                                       color: AppColors.textSecondary,
                                     ),
-                                    onPressed: () => setState(() =>
-                                        _obscureConfirmPassword =
-                                            !_obscureConfirmPassword),
+                                    onPressed: () => setState(
+                                      () => _obscureConfirmPassword =
+                                          !_obscureConfirmPassword,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -506,8 +521,7 @@ class _RegisterScreenState extends State<RegisterScreen>
                                       height: 1.4,
                                     ),
                                     children: [
-                                      const TextSpan(
-                                          text: 'I agree to the '),
+                                      const TextSpan(text: 'I agree to the '),
                                       TextSpan(
                                         text: 'Terms of Service',
                                         recognizer: TapGestureRecognizer()
@@ -516,8 +530,7 @@ class _RegisterScreenState extends State<RegisterScreen>
                                           fontSize: 12,
                                           fontWeight: FontWeight.w600,
                                           color: AppColors.primary,
-                                          decoration:
-                                              TextDecoration.underline,
+                                          decoration: TextDecoration.underline,
                                           decorationColor: AppColors.primary,
                                         ),
                                       ),
@@ -530,8 +543,7 @@ class _RegisterScreenState extends State<RegisterScreen>
                                           fontSize: 12,
                                           fontWeight: FontWeight.w600,
                                           color: AppColors.primary,
-                                          decoration:
-                                              TextDecoration.underline,
+                                          decoration: TextDecoration.underline,
                                           decorationColor: AppColors.primary,
                                         ),
                                       ),
@@ -549,17 +561,23 @@ class _RegisterScreenState extends State<RegisterScreen>
                             Container(
                               width: double.infinity,
                               padding: const EdgeInsets.symmetric(
-                                  horizontal: 12, vertical: 10),
+                                horizontal: 12,
+                                vertical: 10,
+                              ),
                               decoration: BoxDecoration(
                                 color: AppColors.errorLight,
                                 borderRadius: BorderRadius.circular(8),
                                 border: Border.all(
-                                    color: AppColors.error.withOpacity(0.3)),
+                                  color: AppColors.error.withOpacity(0.3),
+                                ),
                               ),
                               child: Row(
                                 children: [
-                                  const Icon(Icons.error_outline_rounded,
-                                      size: 16, color: AppColors.error),
+                                  const Icon(
+                                    Icons.error_outline_rounded,
+                                    size: 16,
+                                    color: AppColors.error,
+                                  ),
                                   const SizedBox(width: 8),
                                   Expanded(
                                     child: Text(
@@ -621,7 +639,8 @@ class _RegisterScreenState extends State<RegisterScreen>
                                 onTap: () => Navigator.pushReplacement(
                                   context,
                                   MaterialPageRoute(
-                                      builder: (_) => const LoginScreen()),
+                                    builder: (_) => const LoginScreen(),
+                                  ),
                                 ),
                                 child: Text(
                                   'Login',

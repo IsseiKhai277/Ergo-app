@@ -3,9 +3,11 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 
+import 'providers/profile_provider.dart';
 import 'screens/auth/login_screen.dart';
-import 'screens/home/home_screen.dart';
+import 'screens/main/main_screen.dart';
 import 'theme/app_theme.dart';
 
 import 'firebase_options.dart';
@@ -42,12 +44,17 @@ class ErgoApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Ergo',
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.lightTheme,
-      // Auth state router - once Firebase is initialized, use StreamBuilder
-      home: const _AuthGate(),
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => ProfileProvider()),
+      ],
+      child: MaterialApp(
+        title: 'Ergo',
+        debugShowCheckedModeBanner: false,
+        theme: AppTheme.lightTheme,
+        // Auth state router - once Firebase is initialized, use StreamBuilder
+        home: const _AuthGate(),
+      ),
     );
   }
 }
@@ -58,22 +65,18 @@ class _AuthGate extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // TODO: Uncomment after Firebase initialization
-    // return StreamBuilder<User?>(
-    //   stream: FirebaseAuth.instance.authStateChanges(),
-    //   builder: (context, snapshot) {
-    //     if (snapshot.connectionState == ConnectionState.waiting) {
-    //       return const _SplashScreen();
-    //     }
-    //     if (snapshot.hasData && snapshot.data != null) {
-    //       return const HomeScreen();
-    //     }
-    //     return const LoginScreen();
-    //   },
-    // );
-
-    // For now, show login screen directly
-    return const LoginScreen();
+    return StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.authStateChanges(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const _SplashScreen();
+        }
+        if (snapshot.hasData && snapshot.data != null) {
+          return const MainScreen();
+        }
+        return const LoginScreen();
+      },
+    );
   }
 }
 

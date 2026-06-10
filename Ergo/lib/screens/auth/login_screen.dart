@@ -20,7 +20,6 @@ class _LoginScreenState extends State<LoginScreen>
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
 
-  String _selectedRole = 'worker';
   bool _obscurePassword = true;
   bool _isLoading = false;
   bool _isGoogleLoading = false;
@@ -93,9 +92,7 @@ class _LoginScreenState extends State<LoginScreen>
     });
 
     try {
-      final role =
-          _selectedRole == 'worker' ? UserRole.worker : UserRole.client;
-      await AuthService.signInWithGoogle(role: role);
+      await AuthService.signInWithGoogle(role: UserRole.client);
     } on FirebaseAuthException catch (e) {
       setState(() => _errorMessage = AuthService.getErrorMessage(e));
     } catch (_) {
@@ -202,15 +199,6 @@ class _LoginScreenState extends State<LoginScreen>
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // ── Role Toggle ──
-                          RoleToggle(
-                            selectedRole: _selectedRole,
-                            onRoleChanged: (r) =>
-                                setState(() => _selectedRole = r),
-                          ),
-
-                          const SizedBox(height: 24),
-
                           // ── Email Field ──
                           AppTextField(
                             label: 'Email Address',

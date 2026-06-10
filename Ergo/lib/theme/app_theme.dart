@@ -156,7 +156,6 @@ class AppTheme {
             fontWeight: FontWeight.w600,
             letterSpacing: 0.3,
           ),
-          elevation: 0,
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
