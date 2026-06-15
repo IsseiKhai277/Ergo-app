@@ -10,6 +10,7 @@ class JobPost {
   final double price;
   final String location;
   final DateTime createdAt;
+  final DateTime? scheduledAt;
 
   JobPost({
     required this.id,
@@ -21,6 +22,7 @@ class JobPost {
     required this.price,
     required this.location,
     required this.createdAt,
+    this.scheduledAt,
   });
 
   factory JobPost.fromMap(Map<String, dynamic> data, String documentId) {
@@ -34,6 +36,7 @@ class JobPost {
       price: (data['price'] ?? 0.0).toDouble(),
       location: data['location'] ?? '',
       createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      scheduledAt: (data['scheduledAt'] as Timestamp?)?.toDate(),
     );
   }
 
@@ -47,6 +50,7 @@ class JobPost {
       'price': price,
       'location': location,
       'createdAt': FieldValue.serverTimestamp(),
+      if (scheduledAt != null) 'scheduledAt': Timestamp.fromDate(scheduledAt!),
     };
   }
 }

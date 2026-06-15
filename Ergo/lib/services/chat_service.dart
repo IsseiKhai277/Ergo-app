@@ -99,22 +99,28 @@ class ChatService {
     required String description,
     required double price,
     required String location,
+    DateTime? scheduledAt,
   }) async {
     final uid = _currentUid;
     final convRef = _db.collection('conversations').doc(conversationId);
 
     final preview = 'Job Offer: $title';
 
+    final jobOfferData = <String, dynamic>{
+      'title': title,
+      'description': description,
+      'price': price,
+      'location': location,
+    };
+    if (scheduledAt != null) {
+      jobOfferData['scheduledAt'] = Timestamp.fromDate(scheduledAt);
+    }
+
     await convRef.collection('messages').add({
       'senderId': uid,
       'text': preview,
       'messageType': 'job_offer',
-      'jobOffer': {
-        'title': title,
-        'description': description,
-        'price': price,
-        'location': location,
-      },
+      'jobOffer': jobOfferData,
       'sentAt': FieldValue.serverTimestamp(),
     });
 
@@ -131,6 +137,20 @@ class ChatService {
     await _db.collection('conversations').doc(conversationId).update({
       'unreadCount.$_currentUid': 0,
     });
+  }
+
+  // ─── Update job offer status (accept / reject) ────────────────────────────
+  static Future<void> updateJobOfferStatus({
+    required String conversationId,
+    required String messageId,
+    required String status, // 'accepted' | 'rejected'
+  }) async {
+    await _db
+        .collection('conversations')
+        .doc(conversationId)
+        .collection('messages')
+        .doc(messageId)
+        .update({'jobOffer.status': status});
   }
 
   // ─── Get other participant's ID from a conversation ───────────────────────

@@ -1,16 +1,26 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:timeago/timeago.dart' as timeago;
 import '../../theme/app_theme.dart';
 import '../../models/job_post.dart';
+import '../../services/chat_service.dart';
+import '../messages/chat_screen.dart';
 
-class JobDetailsScreen extends StatelessWidget {
+class JobDetailsScreen extends StatefulWidget {
   final JobPost job;
 
   const JobDetailsScreen({super.key, required this.job});
 
   @override
+  State<JobDetailsScreen> createState() => _JobDetailsScreenState();
+}
+
+class _JobDetailsScreenState extends State<JobDetailsScreen> {
+  @override
   Widget build(BuildContext context) {
+    final job = widget.job;
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -41,7 +51,7 @@ class JobDetailsScreen extends StatelessWidget {
                     ),
                   ),
                 ),
-                
+
                 // Content
                 Padding(
                   padding: const EdgeInsets.all(24),
@@ -65,13 +75,14 @@ class JobDetailsScreen extends StatelessWidget {
                           ),
                           const SizedBox(width: 16),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 8),
                             decoration: BoxDecoration(
                               color: AppColors.primary.withOpacity(0.1),
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Text(
-                              '\$${job.price.toStringAsFixed(0)}',
+                              'RM ${job.price.toStringAsFixed(0)}',
                               style: GoogleFonts.inter(
                                 fontSize: 20,
                                 fontWeight: FontWeight.w700,
@@ -81,13 +92,14 @@ class JobDetailsScreen extends StatelessWidget {
                           ),
                         ],
                       ),
-                      
+
                       const SizedBox(height: 16),
-                      
+
                       // Meta Info (Location & Time)
                       Row(
                         children: [
-                          const Icon(Icons.location_on_outlined, size: 16, color: AppColors.textSecondary),
+                          const Icon(Icons.location_on_outlined,
+                              size: 16, color: AppColors.textSecondary),
                           const SizedBox(width: 4),
                           Expanded(
                             child: Text(
@@ -105,7 +117,8 @@ class JobDetailsScreen extends StatelessWidget {
                       const SizedBox(height: 8),
                       Row(
                         children: [
-                          const Icon(Icons.access_time, size: 16, color: AppColors.textSecondary),
+                          const Icon(Icons.access_time,
+                              size: 16, color: AppColors.textSecondary),
                           const SizedBox(width: 4),
                           Text(
                             'Posted ${timeago.format(job.createdAt)}',
@@ -116,9 +129,9 @@ class JobDetailsScreen extends StatelessWidget {
                           ),
                         ],
                       ),
-                      
+
                       const SizedBox(height: 32),
-                      
+
                       // Poster Info
                       Text(
                         'Posted by',
@@ -139,8 +152,12 @@ class JobDetailsScreen extends StatelessWidget {
                                 : null,
                             child: job.posterPhotoUrl.isEmpty
                                 ? Text(
-                                    job.posterName.isNotEmpty ? job.posterName[0].toUpperCase() : '?',
-                                    style: GoogleFonts.inter(color: AppColors.primary, fontWeight: FontWeight.bold),
+                                    job.posterName.isNotEmpty
+                                        ? job.posterName[0].toUpperCase()
+                                        : '?',
+                                    style: GoogleFonts.inter(
+                                        color: AppColors.primary,
+                                        fontWeight: FontWeight.bold),
                                   )
                                 : null,
                           ),
@@ -155,9 +172,9 @@ class JobDetailsScreen extends StatelessWidget {
                           ),
                         ],
                       ),
-                      
+
                       const SizedBox(height: 32),
-                      
+
                       // Description
                       Text(
                         'Job Description',
@@ -176,7 +193,7 @@ class JobDetailsScreen extends StatelessWidget {
                           color: AppColors.textSecondary,
                         ),
                       ),
-                      
+
                       // Extra padding for bottom button
                       const SizedBox(height: 100),
                     ],
@@ -185,8 +202,8 @@ class JobDetailsScreen extends StatelessWidget {
               ],
             ),
           ),
-          
-          // Apply Button (Bottom fixed)
+
+          // Apply / Offer Button (Bottom fixed)
           Positioned(
             bottom: 0,
             left: 0,
@@ -206,12 +223,7 @@ class JobDetailsScreen extends StatelessWidget {
               child: SizedBox(
                 height: 56,
                 child: ElevatedButton(
-                  onPressed: () {
-                    // TODO: Implement Apply logic
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Application sent!')),
-                    );
-                  },
+                  onPressed: () => _showOfferJobSheet(context),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primary,
                     shape: RoundedRectangleBorder(
@@ -232,6 +244,401 @@ class JobDetailsScreen extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+
+  // ─── Offer Job Sheet ────────────────────────────────────────────────────────
+  void _showOfferJobSheet(BuildContext context) {
+    final job = widget.job;
+    // Pre-populate with the listed job's details
+    final titleController = TextEditingController(text: job.title);
+    final descController = TextEditingController(text: job.description);
+    final priceController =
+        TextEditingController(text: job.price.toStringAsFixed(2));
+    final locationController = TextEditingController(text: job.location);
+    bool isSubmitting = false;
+    DateTime? selectedDate;
+    TimeOfDay? selectedTime;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setSheetState) {
+          Future<void> pickDate() async {
+            final now = DateTime.now();
+            final picked = await showDatePicker(
+              context: context,
+              initialDate: selectedDate ?? now,
+              firstDate: now,
+              lastDate: now.add(const Duration(days: 365)),
+              builder: (ctx, child) => Theme(
+                data: Theme.of(ctx).copyWith(
+                  colorScheme: const ColorScheme.light(
+                    primary: AppColors.primary,
+                    onPrimary: Colors.white,
+                    surface: AppColors.surface,
+                    onSurface: AppColors.textPrimary,
+                  ),
+                  dialogBackgroundColor: AppColors.background,
+                ),
+                child: child!,
+              ),
+            );
+            if (picked != null) setSheetState(() => selectedDate = picked);
+          }
+
+          Future<void> pickTime() async {
+            final picked = await showTimePicker(
+              context: context,
+              initialTime: selectedTime ?? TimeOfDay.now(),
+              builder: (ctx, child) => Theme(
+                data: Theme.of(ctx).copyWith(
+                  colorScheme: const ColorScheme.light(
+                    primary: AppColors.primary,
+                    onPrimary: Colors.white,
+                    surface: AppColors.surface,
+                    onSurface: AppColors.textPrimary,
+                  ),
+                  dialogBackgroundColor: AppColors.background,
+                ),
+                child: child!,
+              ),
+            );
+            if (picked != null) setSheetState(() => selectedTime = picked);
+          }
+
+          return Container(
+            height: MediaQuery.of(context).size.height * 0.85,
+            decoration: const BoxDecoration(
+              color: AppColors.background,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            padding: EdgeInsets.only(
+              left: 20,
+              right: 20,
+              top: 20,
+              bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Drag handle
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: AppColors.outline,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  'Apply for Job',
+                  style: GoogleFonts.inter(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Send your application to ${job.posterName}',
+                  style: GoogleFonts.inter(
+                    fontSize: 14,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Expanded(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      children: [
+                        _buildTextField(
+                          controller: titleController,
+                          label: 'Job Title',
+                          hint: 'e.g. Need a logo design',
+                          icon: Icons.work_outline_rounded,
+                        ),
+                        const SizedBox(height: 16),
+                        _buildTextField(
+                          controller: descController,
+                          label: 'Description',
+                          hint: 'Describe what you need...',
+                          icon: Icons.description_outlined,
+                          maxLines: 4,
+                        ),
+                        const SizedBox(height: 16),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _buildTextField(
+                                controller: priceController,
+                                label: 'Price (RM)',
+                                hint: '0.00',
+                                icon: Icons.attach_money_rounded,
+                                keyboardType: TextInputType.number,
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: _buildTextField(
+                                controller: locationController,
+                                label: 'Location',
+                                hint: 'e.g. Remote, Melaka',
+                                icon: Icons.location_on_outlined,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+
+                        // ── Schedule Date & Time ──────────────────────────────
+                        Text(
+                          'Schedule (optional)',
+                          style: GoogleFonts.inter(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            // Date picker
+                            Expanded(
+                              child: GestureDetector(
+                                onTap: pickDate,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 14),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.surface,
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.calendar_today_rounded,
+                                          size: 18,
+                                          color: selectedDate != null
+                                              ? AppColors.primary
+                                              : AppColors.textHint),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          selectedDate != null
+                                              ? '${selectedDate!.day}/${selectedDate!.month}/${selectedDate!.year}'
+                                              : 'Pick date',
+                                          style: GoogleFonts.inter(
+                                            fontSize: 13,
+                                            color: selectedDate != null
+                                                ? AppColors.textPrimary
+                                                : AppColors.textHint,
+                                            fontWeight: selectedDate != null
+                                                ? FontWeight.w600
+                                                : FontWeight.normal,
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            // Time picker
+                            Expanded(
+                              child: GestureDetector(
+                                onTap: pickTime,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 14),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.surface,
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.access_time_rounded,
+                                          size: 18,
+                                          color: selectedTime != null
+                                              ? AppColors.primary
+                                              : AppColors.textHint),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          selectedTime != null
+                                              ? selectedTime!.format(context)
+                                              : 'Pick time',
+                                          style: GoogleFonts.inter(
+                                            fontSize: 13,
+                                            color: selectedTime != null
+                                                ? AppColors.textPrimary
+                                                : AppColors.textHint,
+                                            fontWeight: selectedTime != null
+                                                ? FontWeight.w600
+                                                : FontWeight.normal,
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    onPressed: isSubmitting
+                        ? null
+                        : () async {
+                            final title = titleController.text.trim();
+                            if (title.isEmpty) return;
+
+                            setSheetState(() => isSubmitting = true);
+
+                            try {
+                              final price =
+                                  double.tryParse(priceController.text) ?? 0.0;
+
+                              // Combine date + time into a scheduled DateTime
+                              DateTime? scheduledAt;
+                              if (selectedDate != null &&
+                                  selectedTime != null) {
+                                scheduledAt = DateTime(
+                                  selectedDate!.year,
+                                  selectedDate!.month,
+                                  selectedDate!.day,
+                                  selectedTime!.hour,
+                                  selectedTime!.minute,
+                                );
+                              }
+
+                              // Create or reuse conversation with the job poster
+                              final convId =
+                                  await ChatService.getOrCreateConversation(
+                                      job.posterId);
+
+                              // Send job offer message
+                              await ChatService.sendJobOffer(
+                                conversationId: convId,
+                                otherUserId: job.posterId,
+                                title: title,
+                                description: descController.text.trim(),
+                                price: price,
+                                location: locationController.text.trim(),
+                                scheduledAt: scheduledAt,
+                              );
+
+                              if (!context.mounted) return;
+                              Navigator.pop(context); // Close sheet
+
+                              // Navigate to the chat
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => ChatScreen(
+                                    conversationId: convId,
+                                    otherUserId: job.posterId,
+                                    otherUserName: job.posterName,
+                                    otherUserPhotoUrl: job.posterPhotoUrl,
+                                    otherUserRole: '',
+                                  ),
+                                ),
+                              );
+                            } catch (e) {
+                              setSheetState(() => isSubmitting = false);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('Error: $e')),
+                              );
+                            }
+                          },
+                    child: isSubmitting
+                        ? const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(
+                                color: Colors.white, strokeWidth: 2),
+                          )
+                        : Text(
+                            'Send Application',
+                            style: GoogleFonts.inter(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildTextField({
+    required TextEditingController controller,
+    required String label,
+    required String hint,
+    required IconData icon,
+    int maxLines = 1,
+    TextInputType? keyboardType,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: GoogleFonts.inter(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: AppColors.textPrimary,
+          ),
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: controller,
+          maxLines: maxLines,
+          keyboardType: keyboardType,
+          decoration: InputDecoration(
+            hintText: hint,
+            hintStyle:
+                GoogleFonts.inter(color: AppColors.textHint, fontSize: 14),
+            prefixIcon: maxLines == 1
+                ? Icon(icon, color: AppColors.textHint, size: 20)
+                : null,
+            filled: true,
+            fillColor: AppColors.surface,
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide.none,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

@@ -559,6 +559,8 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     final priceController = TextEditingController();
     final locationController = TextEditingController();
     bool isSubmitting = false;
+    DateTime? selectedDate;
+    TimeOfDay? selectedTime;
 
     showModalBottomSheet(
       context: context,
@@ -566,6 +568,48 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
       backgroundColor: Colors.transparent,
       builder: (context) => StatefulBuilder(
         builder: (context, setSheetState) {
+          Future<void> pickDate() async {
+            final now = DateTime.now();
+            final picked = await showDatePicker(
+              context: context,
+              initialDate: selectedDate ?? now,
+              firstDate: now,
+              lastDate: now.add(const Duration(days: 365)),
+              builder: (ctx, child) => Theme(
+                data: Theme.of(ctx).copyWith(
+                  colorScheme: const ColorScheme.light(
+                    primary: AppColors.primary,
+                    onPrimary: Colors.white,
+                    surface: AppColors.surface,
+                    onSurface: AppColors.textPrimary,
+                  ),
+                  dialogBackgroundColor: AppColors.background,
+                ),
+                child: child!,
+              ),
+            );
+            if (picked != null) setSheetState(() => selectedDate = picked);
+          }
+
+          Future<void> pickTime() async {
+            final picked = await showTimePicker(
+              context: context,
+              initialTime: selectedTime ?? TimeOfDay.now(),
+              builder: (ctx, child) => Theme(
+                data: Theme.of(ctx).copyWith(
+                  colorScheme: const ColorScheme.light(
+                    primary: AppColors.primary,
+                    onPrimary: Colors.white,
+                    surface: AppColors.surface,
+                    onSurface: AppColors.textPrimary,
+                  ),
+                  dialogBackgroundColor: AppColors.background,
+                ),
+                child: child!,
+              ),
+            );
+            if (picked != null) setSheetState(() => selectedTime = picked);
+          }
           return Container(
             height: MediaQuery.of(context).size.height * 0.85,
             decoration: const BoxDecoration(
@@ -650,6 +694,104 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                             ),
                           ],
                         ),
+                        const SizedBox(height: 16),
+                        // ── Schedule Date & Time ──────────────────────────
+                        Text(
+                          'Schedule (optional)',
+                          style: GoogleFonts.inter(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            // Date picker
+                            Expanded(
+                              child: GestureDetector(
+                                onTap: pickDate,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 14),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.surface,
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.calendar_today_rounded,
+                                          size: 18,
+                                          color: selectedDate != null
+                                              ? AppColors.primary
+                                              : AppColors.textHint),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          selectedDate != null
+                                              ? '${selectedDate!.day}/${selectedDate!.month}/${selectedDate!.year}'
+                                              : 'Pick date',
+                                          style: GoogleFonts.inter(
+                                            fontSize: 13,
+                                            color: selectedDate != null
+                                                ? AppColors.textPrimary
+                                                : AppColors.textHint,
+                                            fontWeight: selectedDate != null
+                                                ? FontWeight.w600
+                                                : FontWeight.normal,
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            // Time picker
+                            Expanded(
+                              child: GestureDetector(
+                                onTap: pickTime,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 14),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.surface,
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.access_time_rounded,
+                                          size: 18,
+                                          color: selectedTime != null
+                                              ? AppColors.primary
+                                              : AppColors.textHint),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          selectedTime != null
+                                              ? selectedTime!.format(context)
+                                              : 'Pick time',
+                                          style: GoogleFonts.inter(
+                                            fontSize: 13,
+                                            color: selectedTime != null
+                                                ? AppColors.textPrimary
+                                                : AppColors.textHint,
+                                            fontWeight: selectedTime != null
+                                                ? FontWeight.w600
+                                                : FontWeight.normal,
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ],
                     ),
                   ),
@@ -675,7 +817,19 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
 
                             try {
                               final price = double.tryParse(priceController.text) ?? 0.0;
-                              
+
+                              // Combine date + time into a scheduled DateTime
+                              DateTime? scheduledAt;
+                              if (selectedDate != null && selectedTime != null) {
+                                scheduledAt = DateTime(
+                                  selectedDate!.year,
+                                  selectedDate!.month,
+                                  selectedDate!.day,
+                                  selectedTime!.hour,
+                                  selectedTime!.minute,
+                                );
+                              }
+
                               // Create conversation
                               final convId = await ChatService.getOrCreateConversation(widget.userId);
                               
@@ -687,6 +841,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                                 description: descController.text.trim(),
                                 price: price,
                                 location: locationController.text.trim(),
+                                scheduledAt: scheduledAt,
                               );
 
                               if (!context.mounted) return;
