@@ -1,0 +1,6 @@
+# Ignore everything in the root except Ergo folder
+/.idea/
+/.vscode/
+/stitch_designs/
+/README.md
+/bfg.jar
