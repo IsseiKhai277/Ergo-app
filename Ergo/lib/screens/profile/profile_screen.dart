@@ -540,9 +540,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   // ─── Rating Section ────────────────────────────────────────────────────────
   Widget _buildRatingSection(BuildContext context, ProfileProvider provider) {
-    final profile = provider.profile;
-    final rating = profile?.rating ?? 0.0;
-    final reviewCount = profile?.reviewCount ?? 0;
+    final reviews = provider.reviews;
+    final int reviewCount = reviews.length;
+    double rating = 0.0;
+    if (reviewCount > 0) {
+      double total = reviews.fold<double>(0.0, (acc, r) => acc + r.rating);
+      rating = total / reviewCount;
+    }
 
     return GestureDetector(
       onTap: () => Navigator.push(

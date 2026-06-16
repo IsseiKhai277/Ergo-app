@@ -44,6 +44,12 @@ dependencies:
   provider: ^6.1.5+1
   intl: ^0.20.2
 
+  # Mapping & Location
+  flutter_map: ^6.1.0
+  latlong2: ^0.9.1
+  http: ^1.2.0
+  flutter_polyline_points: ^2.1.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

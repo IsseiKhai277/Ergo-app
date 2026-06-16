@@ -22,10 +22,13 @@ class ReviewsScreen extends StatelessWidget {
       ),
       body: Consumer<ProfileProvider>(
         builder: (context, provider, _) {
-          final profile = provider.profile;
           final reviews = provider.reviews;
-          final rating = profile?.rating ?? 0.0;
-          final reviewCount = profile?.reviewCount ?? 0;
+          final reviewCount = reviews.length;
+          double rating = 0.0;
+          if (reviewCount > 0) {
+            double total = reviews.fold<double>(0.0, (acc, r) => acc + r.rating);
+            rating = total / reviewCount;
+          }
 
           return Column(
             children: [

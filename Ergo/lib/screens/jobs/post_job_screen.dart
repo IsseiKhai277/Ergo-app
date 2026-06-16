@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
+import 'package:latlong2/latlong.dart';
 import '../../theme/app_theme.dart';
 import '../../models/job_post.dart';
 import '../../services/job_service.dart';
 import '../../services/auth_service.dart';
+import 'location_picker_screen.dart';
 
 class PostJobScreen extends StatefulWidget {
   const PostJobScreen({super.key});
@@ -24,6 +26,9 @@ class _PostJobScreenState extends State<PostJobScreen> {
   bool _isLocating = false;
   DateTime? _selectedDate;
   TimeOfDay? _selectedTime;
+
+  // Map-picked coordinates (nullable — user may skip pinning)
+  LatLng? _pickedLocation;
 
   @override
   void dispose() {
@@ -70,6 +75,7 @@ class _PostJobScreenState extends State<PostJobScreen> {
         address += '${place.country}';
         _locationController.text =
             address.replaceAll(RegExp(r',\s*$'), '');
+        _pickedLocation = LatLng(position.latitude, position.longitude);
       }
     } catch (e) {
       if (mounted) {
@@ -78,6 +84,54 @@ class _PostJobScreenState extends State<PostJobScreen> {
       }
     } finally {
       if (mounted) setState(() => _isLocating = false);
+    }
+  }
+
+  Future<void> _pinOnMap() async {
+    final result = await Navigator.push<LatLng?>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => LocationPickerScreen(
+          initialLocation: _pickedLocation,
+        ),
+      ),
+    );
+    if (result != null) {
+      setState(() {
+        _pickedLocation = result;
+        _isLocating = true;
+      });
+      try {
+        final placemarks =
+            await placemarkFromCoordinates(result.latitude, result.longitude);
+        if (placemarks.isNotEmpty) {
+          final place = placemarks[0];
+          String address = '';
+          if (place.street != null && place.street!.isNotEmpty) {
+            address += '${place.street}, ';
+          }
+          if (place.locality != null && place.locality!.isNotEmpty) {
+            address += '${place.locality}, ';
+          }
+          address += '${place.country}';
+          setState(() {
+            _locationController.text =
+                address.replaceAll(RegExp(r',\s*$'), '');
+          });
+        } else {
+          setState(() {
+            _locationController.text =
+                '${result.latitude.toStringAsFixed(4)}, ${result.longitude.toStringAsFixed(4)}';
+          });
+        }
+      } catch (_) {
+        setState(() {
+          _locationController.text =
+              '${result.latitude.toStringAsFixed(4)}, ${result.longitude.toStringAsFixed(4)}';
+        });
+      } finally {
+        setState(() => _isLocating = false);
+      }
     }
   }
 
@@ -159,6 +213,19 @@ class _PostJobScreenState extends State<PostJobScreen> {
         );
       }
 
+      LatLng? finalLocation = _pickedLocation;
+      final locationText = _locationController.text.trim();
+      if (finalLocation == null && locationText.isNotEmpty) {
+        try {
+          final locations = await locationFromAddress(locationText);
+          if (locations.isNotEmpty) {
+            finalLocation = LatLng(locations[0].latitude, locations[0].longitude);
+          }
+        } catch (_) {
+          // Fallback to null
+        }
+      }
+
       final newJob = JobPost(
         id: '',
         posterId: currentUser.uid,
@@ -167,9 +234,11 @@ class _PostJobScreenState extends State<PostJobScreen> {
         title: title,
         description: _descController.text.trim(),
         price: double.tryParse(_priceController.text.trim()) ?? 0.0,
-        location: _locationController.text.trim(),
+        location: locationText,
         createdAt: DateTime.now(),
         scheduledAt: scheduledAt,
+        jobLatitude: finalLocation?.latitude,
+        jobLongitude: finalLocation?.longitude,
       );
 
       await JobService.createJobPost(newJob);
@@ -418,7 +487,7 @@ class _PostJobScreenState extends State<PostJobScreen> {
     );
   }
 
-  // ─── Location Field (with GPS button inline) ────────────────────────────────
+  // ─── Location Field (with GPS button + Map pin button inline) ──────────────
   Widget _buildLocationField() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -434,12 +503,22 @@ class _PostJobScreenState extends State<PostJobScreen> {
         const SizedBox(height: 8),
         TextField(
           controller: _locationController,
+          onChanged: (val) {
+            if (_pickedLocation != null) {
+              setState(() => _pickedLocation = null);
+            }
+          },
           decoration: InputDecoration(
             hintText: 'e.g. Remote, Melaka',
             hintStyle:
                 GoogleFonts.inter(color: AppColors.textHint, fontSize: 14),
-            prefixIcon:
-                const Icon(Icons.location_on_outlined, color: AppColors.textHint, size: 20),
+            prefixIcon: Icon(
+              _pickedLocation != null
+                  ? Icons.pin_drop_rounded
+                  : Icons.location_on_outlined,
+              color: _pickedLocation != null ? AppColors.primary : AppColors.textHint,
+              size: 20,
+            ),
             suffixIcon: _isLocating
                 ? const Padding(
                     padding: EdgeInsets.all(12),
@@ -450,11 +529,27 @@ class _PostJobScreenState extends State<PostJobScreen> {
                           strokeWidth: 2, color: AppColors.primary),
                     ),
                   )
-                : IconButton(
-                    icon: const Icon(Icons.my_location_rounded,
-                        color: AppColors.primary, size: 20),
-                    tooltip: 'Use current location',
-                    onPressed: _getCurrentLocation,
+                : Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.my_location_rounded,
+                            color: AppColors.primary, size: 20),
+                        tooltip: 'Use current location',
+                        onPressed: _getCurrentLocation,
+                      ),
+                      IconButton(
+                        icon: Icon(
+                          _pickedLocation != null
+                              ? Icons.pin_drop_rounded
+                              : Icons.map_outlined,
+                          color: AppColors.primary,
+                          size: 20,
+                        ),
+                        tooltip: 'Pin on map',
+                        onPressed: _pinOnMap,
+                      ),
+                    ],
                   ),
             filled: true,
             fillColor: AppColors.surface,

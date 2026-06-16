@@ -87,8 +87,11 @@ class _ChatScreenState extends State<ChatScreen> {
       backgroundColor: AppColors.surface,
       elevation: 0,
       leading: IconButton(
-        icon: const Icon(Icons.arrow_back_ios_new_rounded,
-            color: AppColors.textPrimary, size: 20),
+        icon: const Icon(
+          Icons.arrow_back_ios_new_rounded,
+          color: AppColors.textPrimary,
+          size: 20,
+        ),
         onPressed: () => Navigator.pop(context),
       ),
       title: Row(
@@ -145,8 +148,10 @@ class _ChatScreenState extends State<ChatScreen> {
           onPressed: () {},
         ),
         IconButton(
-          icon: const Icon(Icons.more_vert_rounded,
-              color: AppColors.textSecondary),
+          icon: const Icon(
+            Icons.more_vert_rounded,
+            color: AppColors.textSecondary,
+          ),
           onPressed: () {},
         ),
       ],
@@ -161,7 +166,8 @@ class _ChatScreenState extends State<ChatScreen> {
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(
-              child: CircularProgressIndicator(color: AppColors.primary));
+            child: CircularProgressIndicator(color: AppColors.primary),
+          );
         }
 
         final messages = snapshot.data ?? [];
@@ -189,8 +195,7 @@ class _ChatScreenState extends State<ChatScreen> {
           );
         }
 
-        WidgetsBinding.instance
-            .addPostFrameCallback((_) => _scrollToBottom());
+        WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
 
         return ListView.builder(
           controller: _scrollController,
@@ -199,7 +204,8 @@ class _ChatScreenState extends State<ChatScreen> {
           itemBuilder: (_, i) {
             final msg = messages[i];
             final isMe = msg.senderId == currentUid;
-            final showTime = i == messages.length - 1 ||
+            final showTime =
+                i == messages.length - 1 ||
                 messages[i + 1].sentAt.difference(msg.sentAt).inMinutes > 10;
 
             return _MessageBubble(
@@ -235,12 +241,16 @@ class _ChatScreenState extends State<ChatScreen> {
               textCapitalization: TextCapitalization.sentences,
               decoration: InputDecoration(
                 hintText: 'Type a message...',
-                hintStyle:
-                    GoogleFonts.inter(fontSize: 14, color: AppColors.textHint),
+                hintStyle: GoogleFonts.inter(
+                  fontSize: 14,
+                  color: AppColors.textHint,
+                ),
                 filled: true,
                 fillColor: AppColors.background,
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 10,
+                ),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(24),
                   borderSide: BorderSide.none,
@@ -259,8 +269,11 @@ class _ChatScreenState extends State<ChatScreen> {
                 color: AppColors.primary,
                 shape: BoxShape.circle,
               ),
-              child:
-                  const Icon(Icons.send_rounded, color: Colors.white, size: 20),
+              child: const Icon(
+                Icons.send_rounded,
+                color: Colors.white,
+                size: 20,
+              ),
             ),
           ),
         ],
@@ -295,11 +308,22 @@ class _MessageBubbleState extends State<_MessageBubble> {
     if (_isUpdating) return;
     setState(() => _isUpdating = true);
     try {
-      await ChatService.updateJobOfferStatus(
-        conversationId: widget.conversationId,
-        messageId: widget.message.id,
-        status: status,
-      );
+      if (status == 'accepted' && widget.message.jobOffer != null) {
+        // Creates a /jobs doc AND marks the message accepted
+        await ChatService.acceptJobOffer(
+          conversationId: widget.conversationId,
+          messageId: widget.message.id,
+          jobOffer: widget.message.jobOffer!,
+        );
+      } else {
+        // Rejection — just update the message status
+        await ChatService.updateJobOfferStatus(
+          conversationId: widget.conversationId,
+          messageId: widget.message.id,
+          status: status,
+          jobOffer: widget.message.jobOffer,
+        );
+      }
     } catch (_) {
       if (mounted) setState(() => _isUpdating = false);
     }
@@ -323,11 +347,12 @@ class _MessageBubbleState extends State<_MessageBubble> {
                 constraints: BoxConstraints(
                   maxWidth: MediaQuery.of(context).size.width * 0.75,
                 ),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 10,
+                ),
                 decoration: BoxDecoration(
-                  color:
-                      widget.isMe ? AppColors.primary : AppColors.surface,
+                  color: widget.isMe ? AppColors.primary : AppColors.surface,
                   borderRadius: BorderRadius.only(
                     topLeft: const Radius.circular(18),
                     topRight: const Radius.circular(18),
@@ -346,7 +371,8 @@ class _MessageBubbleState extends State<_MessageBubble> {
                     ),
                   ],
                 ),
-                child: widget.message.messageType == 'job_offer' &&
+                child:
+                    widget.message.messageType == 'job_offer' &&
                         widget.message.jobOffer != null
                     ? _buildJobOfferCard(context)
                     : Text(
@@ -402,9 +428,11 @@ class _MessageBubbleState extends State<_MessageBubble> {
           // ── Header ──────────────────────────────────────
           Row(
             children: [
-              Icon(Icons.work_rounded,
-                  color: widget.isMe ? Colors.white : AppColors.primary,
-                  size: 18),
+              Icon(
+                Icons.work_rounded,
+                color: widget.isMe ? Colors.white : AppColors.primary,
+                size: 18,
+              ),
               const SizedBox(width: 8),
               Text(
                 'Job Offer',
@@ -443,8 +471,7 @@ class _MessageBubbleState extends State<_MessageBubble> {
 
           // ── Price ────────────────────────────────────────
           Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
               color: widget.isMe
                   ? Colors.white.withOpacity(0.2)
@@ -454,10 +481,11 @@ class _MessageBubbleState extends State<_MessageBubble> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.attach_money_rounded,
-                    color:
-                        widget.isMe ? Colors.white : AppColors.primary,
-                    size: 16),
+                Icon(
+                  Icons.attach_money_rounded,
+                  color: widget.isMe ? Colors.white : AppColors.primary,
+                  size: 16,
+                ),
                 Text(
                   price.toStringAsFixed(2),
                   style: GoogleFonts.inter(
@@ -475,19 +503,17 @@ class _MessageBubbleState extends State<_MessageBubble> {
             const SizedBox(height: 8),
             Row(
               children: [
-                Icon(Icons.location_on_rounded,
-                    color: widget.isMe
-                        ? Colors.white70
-                        : AppColors.textHint,
-                    size: 14),
+                Icon(
+                  Icons.location_on_rounded,
+                  color: widget.isMe ? Colors.white70 : AppColors.textHint,
+                  size: 14,
+                ),
                 const SizedBox(width: 4),
                 Expanded(
                   child: Text(
                     location,
                     style: GoogleFonts.inter(
-                      color: widget.isMe
-                          ? Colors.white70
-                          : AppColors.textHint,
+                      color: widget.isMe ? Colors.white70 : AppColors.textHint,
                       fontSize: 12,
                     ),
                     maxLines: 1,
@@ -503,19 +529,17 @@ class _MessageBubbleState extends State<_MessageBubble> {
             const SizedBox(height: 8),
             Row(
               children: [
-                Icon(Icons.schedule_rounded,
-                    color: widget.isMe
-                        ? Colors.white70
-                        : AppColors.primary,
-                    size: 14),
+                Icon(
+                  Icons.schedule_rounded,
+                  color: widget.isMe ? Colors.white70 : AppColors.primary,
+                  size: 14,
+                ),
                 const SizedBox(width: 4),
                 Expanded(
                   child: Text(
                     fmtSchedule(scheduledAt),
                     style: GoogleFonts.inter(
-                      color: widget.isMe
-                          ? Colors.white70
-                          : AppColors.primary,
+                      color: widget.isMe ? Colors.white70 : AppColors.primary,
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
                     ),
@@ -544,8 +568,7 @@ class _MessageBubbleState extends State<_MessageBubble> {
       final isAccepted = status == 'accepted';
       return Container(
         width: double.infinity,
-        padding:
-            const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
         decoration: BoxDecoration(
           color: isAccepted
               ? const Color(0xFF16A34A).withOpacity(widget.isMe ? 0.25 : 0.12)
@@ -561,9 +584,7 @@ class _MessageBubbleState extends State<_MessageBubble> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
-              isAccepted
-                  ? Icons.check_circle_rounded
-                  : Icons.cancel_rounded,
+              isAccepted ? Icons.check_circle_rounded : Icons.cancel_rounded,
               size: 16,
               color: isAccepted
                   ? const Color(0xFF4ADE80)
@@ -605,8 +626,10 @@ class _MessageBubbleState extends State<_MessageBubble> {
             child: SizedBox(
               height: 20,
               width: 20,
-              child:
-                  CircularProgressIndicator(color: AppColors.primary, strokeWidth: 2),
+              child: CircularProgressIndicator(
+                color: AppColors.primary,
+                strokeWidth: 2,
+              ),
             ),
           )
         : Row(
@@ -621,13 +644,17 @@ class _MessageBubbleState extends State<_MessageBubble> {
                       color: const Color(0xFFDC2626).withOpacity(0.12),
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(
-                          color: const Color(0xFFFCA5A5).withOpacity(0.5)),
+                        color: const Color(0xFFFCA5A5).withOpacity(0.5),
+                      ),
                     ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Icon(Icons.close_rounded,
-                            size: 15, color: Color(0xFFFCA5A5)),
+                        const Icon(
+                          Icons.close_rounded,
+                          size: 15,
+                          color: Color(0xFFFCA5A5),
+                        ),
                         const SizedBox(width: 5),
                         Text(
                           'Reject',
@@ -653,20 +680,25 @@ class _MessageBubbleState extends State<_MessageBubble> {
                       color: const Color(0xFF16A34A).withOpacity(0.12),
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(
-                          color: const Color(0xFF4ADE80).withOpacity(0.5)),
+                        color: const Color(0xFF4ADE80).withOpacity(0.5),
+                      ),
                     ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Icon(Icons.check_rounded,
-                            size: 15, color: Color(0xFF4ADE80)),
+                        const Icon(
+                          Icons.check_rounded,
+                          size: 15,
+                          color: Color(0xFF4ADE80),
+                        ),
                         const SizedBox(width: 5),
                         Text(
                           'Accept',
                           style: GoogleFonts.inter(
                             fontSize: 13,
                             fontWeight: FontWeight.w700,
-                            color: const Color(0xFF4ADE80)),
+                            color: const Color(0xFF4ADE80),
+                          ),
                         ),
                       ],
                     ),

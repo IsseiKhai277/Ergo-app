@@ -45,6 +45,7 @@ class ProfileProvider extends ChangeNotifier {
         _isLoading = false;
         _errorMessage = null;
         notifyListeners();
+        _syncRatingIfNeeded();
       },
       onError: (e) {
         _errorMessage = 'Failed to load profile: $e';
@@ -58,11 +59,43 @@ class ProfileProvider extends ChangeNotifier {
       (reviews) {
         _reviews = reviews;
         notifyListeners();
+        _syncRatingIfNeeded();
       },
       onError: (e) {
         debugPrint('Reviews stream error: $e');
       },
     );
+  }
+
+  /// Recalculates worker's average rating and count and updates their user document
+  /// if they don't match. This runs under the worker's own permission.
+  Future<void> _syncRatingIfNeeded() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final currentProfile = _profile;
+    if (uid == null || currentProfile == null) return;
+
+    int count = _reviews.length;
+    double total = _reviews.fold<double>(0.0, (acc, r) => acc + r.rating);
+    double average = count == 0 ? 0.0 : total / count;
+
+    final double profileRating = currentProfile.rating;
+    final int profileReviewCount = currentProfile.reviewCount;
+
+    // Allow minor float differences within 0.01 precision
+    if ((profileRating - average).abs() > 0.01 || profileReviewCount != count) {
+      debugPrint('Syncing profile rating for $uid: current=$profileRating, calculated=$average, count=$count');
+      try {
+        await ProfileService.updateProfile(
+          uid: uid,
+          data: {
+            'rating': average,
+            'reviewCount': count,
+          },
+        );
+      } catch (e) {
+        debugPrint('Failed to sync profile rating: $e');
+      }
+    }
   }
 
   // ─── Update Profile ────────────────────────────────────────────────────────

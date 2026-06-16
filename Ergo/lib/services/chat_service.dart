@@ -100,28 +100,69 @@ class ChatService {
     required double price,
     required String location,
     DateTime? scheduledAt,
+    double? jobLatitude,
+    double? jobLongitude,
   }) async {
     final uid = _currentUid;
     final convRef = _db.collection('conversations').doc(conversationId);
 
+    // Fetch sender's profile so we can store name/photo in the offer
+    final senderDoc = await _db.collection('users').doc(uid).get();
+    final senderName = senderDoc.data()?['fullName'] as String? ?? '';
+    final senderPhoto = senderDoc.data()?['photoUrl'] as String? ?? '';
+
     final preview = 'Job Offer: $title';
 
+    // Generate job document ID beforehand
+    final jobRef = _db.collection('jobs').doc();
+
     final jobOfferData = <String, dynamic>{
+      'jobId': jobRef.id,
       'title': title,
       'description': description,
       'price': price,
       'location': location,
+      // Store both parties so we can write a proper jobs doc on accept
+      'senderUid': uid,
+      'senderName': senderName,
+      'senderPhoto': senderPhoto,
+      'receiverUid': otherUserId,
     };
     if (scheduledAt != null) {
       jobOfferData['scheduledAt'] = Timestamp.fromDate(scheduledAt);
     }
+    if (jobLatitude != null) jobOfferData['jobLatitude'] = jobLatitude;
+    if (jobLongitude != null) jobOfferData['jobLongitude'] = jobLongitude;
 
-    await convRef.collection('messages').add({
+    final messageRef = await convRef.collection('messages').add({
       'senderId': uid,
       'text': preview,
       'messageType': 'job_offer',
       'jobOffer': jobOfferData,
       'sentAt': FieldValue.serverTimestamp(),
+    });
+
+    // Create the Offered job post in the /jobs collection
+    await jobRef.set({
+      'id': jobRef.id,
+      'posterId': uid,
+      'posterName': senderName,
+      'posterPhotoUrl': senderPhoto,
+      'workerId': otherUserId,
+      'workerName': '',
+      'workerPhotoUrl': '',
+      'title': title,
+      'description': description,
+      'price': price,
+      'location': location,
+      'status': 'offered',
+      'createdAt': FieldValue.serverTimestamp(),
+      'conversationId': conversationId,
+      'messageId': messageRef.id,
+      if (scheduledAt != null)
+        'scheduledAt': Timestamp.fromDate(scheduledAt),
+      if (jobLatitude != null) 'jobLatitude': jobLatitude,
+      if (jobLongitude != null) 'jobLongitude': jobLongitude,
     });
 
     await convRef.update({
@@ -130,6 +171,71 @@ class ChatService {
       'lastSenderId': uid,
       'unreadCount.$otherUserId': FieldValue.increment(1),
     });
+  }
+
+  // ─── Accept a job offer → creates a real doc in /jobs ────────────────────
+  /// Call this instead of (or in addition to) updateJobOfferStatus when the
+  /// recipient taps Accept. It writes a proper JobPost document so the job
+  /// shows up on both parties' My Jobs screens.
+  static Future<void> acceptJobOffer({
+    required String conversationId,
+    required String messageId,
+    required Map<String, dynamic> jobOffer,
+  }) async {
+    final uid = _currentUid;
+
+    // Fetch the accepting user's profile for worker name/photo
+    final workerDoc = await _db.collection('users').doc(uid).get();
+    final workerName = workerDoc.data()?['fullName'] as String? ?? '';
+    final workerPhoto = workerDoc.data()?['photoUrl'] as String? ?? '';
+
+    final posterId = jobOffer['senderUid'] as String? ?? '';
+    final posterName = jobOffer['senderName'] as String? ?? '';
+    final posterPhoto = jobOffer['senderPhoto'] as String? ?? '';
+
+    final scheduledTs = jobOffer['scheduledAt'];
+    final scheduledAt =
+        scheduledTs is Timestamp ? scheduledTs.toDate() : null;
+
+    final jobId = jobOffer['jobId'] as String? ?? '';
+    if (jobId.isNotEmpty) {
+      // Update the existing Offered job document in /jobs to Accepted
+      await _db.collection('jobs').doc(jobId).update({
+        'workerName': workerName,
+        'workerPhotoUrl': workerPhoto,
+        'status': 'accepted',
+      });
+    } else {
+      // Fallback for legacy offers that do not have a jobId field
+      await _db.collection('jobs').add({
+        'posterId': posterId,
+        'posterName': posterName,
+        'posterPhotoUrl': posterPhoto,
+        'workerId': uid,
+        'workerName': workerName,
+        'workerPhotoUrl': workerPhoto,
+        'title': jobOffer['title'] ?? '',
+        'description': jobOffer['description'] ?? '',
+        'price': (jobOffer['price'] ?? 0.0).toDouble(),
+        'location': jobOffer['location'] ?? '',
+        'status': 'accepted',
+        'createdAt': FieldValue.serverTimestamp(),
+        if (scheduledAt != null)
+          'scheduledAt': Timestamp.fromDate(scheduledAt),
+        if (jobOffer['jobLatitude'] != null)
+          'jobLatitude': (jobOffer['jobLatitude'] as num).toDouble(),
+        if (jobOffer['jobLongitude'] != null)
+          'jobLongitude': (jobOffer['jobLongitude'] as num).toDouble(),
+      });
+    }
+
+    // 2. Mark the message as accepted
+    await updateJobOfferStatus(
+      conversationId: conversationId,
+      messageId: messageId,
+      status: 'accepted',
+      jobOffer: jobOffer,
+    );
   }
 
   // ─── Mark conversation as read for current user ───────────────────────────
@@ -144,6 +250,7 @@ class ChatService {
     required String conversationId,
     required String messageId,
     required String status, // 'accepted' | 'rejected'
+    Map<String, dynamic>? jobOffer,
   }) async {
     await _db
         .collection('conversations')
@@ -151,6 +258,15 @@ class ChatService {
         .collection('messages')
         .doc(messageId)
         .update({'jobOffer.status': status});
+
+    if (jobOffer != null) {
+      final jobId = jobOffer['jobId'] as String? ?? '';
+      if (jobId.isNotEmpty) {
+        await _db.collection('jobs').doc(jobId).update({
+          'status': status,
+        });
+      }
+    }
   }
 
   // ─── Get other participant's ID from a conversation ───────────────────────

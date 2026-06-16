@@ -1,11 +1,14 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:timeago/timeago.dart' as timeago;
+import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart';
 import '../../theme/app_theme.dart';
 import '../../models/job_post.dart';
 import '../../services/chat_service.dart';
 import '../messages/chat_screen.dart';
+import 'location_picker_screen.dart';
 
 class JobDetailsScreen extends StatefulWidget {
   final JobPost job;
@@ -256,9 +259,14 @@ class _JobDetailsScreenState extends State<JobDetailsScreen> {
     final priceController =
         TextEditingController(text: job.price.toStringAsFixed(2));
     final locationController = TextEditingController(text: job.location);
+    bool isLocating = false;
     bool isSubmitting = false;
     DateTime? selectedDate;
     TimeOfDay? selectedTime;
+    // Map-picked coordinates — pre-fill from existing job if available
+    LatLng? pickedLocation = (job.jobLatitude != null && job.jobLongitude != null)
+        ? LatLng(job.jobLatitude!, job.jobLongitude!)
+        : null;
 
     showModalBottomSheet(
       context: context,
@@ -266,6 +274,100 @@ class _JobDetailsScreenState extends State<JobDetailsScreen> {
       backgroundColor: Colors.transparent,
       builder: (context) => StatefulBuilder(
         builder: (context, setSheetState) {
+          Future<void> getCurrentLocation() async {
+            setSheetState(() => isLocating = true);
+            try {
+              bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+              if (!serviceEnabled) throw Exception('Location services are disabled.');
+
+              LocationPermission permission = await Geolocator.checkPermission();
+              if (permission == LocationPermission.denied) {
+                permission = await Geolocator.requestPermission();
+                if (permission == LocationPermission.denied) {
+                  throw Exception('Location permissions are denied');
+                }
+              }
+              if (permission == LocationPermission.deniedForever) {
+                throw Exception('Location permissions are permanently denied.');
+              }
+
+              final position = await Geolocator.getCurrentPosition(
+                  locationSettings:
+                      const LocationSettings(accuracy: LocationAccuracy.high));
+              final placemarks =
+                  await placemarkFromCoordinates(position.latitude, position.longitude);
+
+              if (placemarks.isNotEmpty) {
+                final place = placemarks[0];
+                String address = '';
+                if (place.street != null && place.street!.isNotEmpty) {
+                  address += '${place.street}, ';
+                }
+                if (place.locality != null && place.locality!.isNotEmpty) {
+                  address += '${place.locality}, ';
+                }
+                address += '${place.country}';
+                locationController.text =
+                    address.replaceAll(RegExp(r',\s*$'), '');
+              }
+            } catch (e) {
+              if (context.mounted) {
+                ScaffoldMessenger.of(context)
+                    .showSnackBar(SnackBar(content: Text(e.toString())));
+              }
+            } finally {
+              setSheetState(() => isLocating = false);
+            }
+          }
+
+          Future<void> pinOnMap() async {
+            final result = await Navigator.push<LatLng?>(
+              context,
+              MaterialPageRoute(
+                builder: (_) => LocationPickerScreen(
+                  initialLocation: pickedLocation,
+                ),
+              ),
+            );
+            if (result != null) {
+              setSheetState(() {
+                pickedLocation = result;
+                isLocating = true;
+              });
+              try {
+                final placemarks =
+                    await placemarkFromCoordinates(result.latitude, result.longitude);
+                if (placemarks.isNotEmpty) {
+                  final place = placemarks[0];
+                  String address = '';
+                  if (place.street != null && place.street!.isNotEmpty) {
+                    address += '${place.street}, ';
+                  }
+                  if (place.locality != null && place.locality!.isNotEmpty) {
+                    address += '${place.locality}, ';
+                  }
+                  address += '${place.country}';
+                  setSheetState(() {
+                    locationController.text =
+                        address.replaceAll(RegExp(r',\s*$'), '');
+                  });
+                } else {
+                  setSheetState(() {
+                    locationController.text =
+                        '${result.latitude.toStringAsFixed(4)}, ${result.longitude.toStringAsFixed(4)}';
+                  });
+                }
+              } catch (_) {
+                setSheetState(() {
+                  locationController.text =
+                      '${result.latitude.toStringAsFixed(4)}, ${result.longitude.toStringAsFixed(4)}';
+                });
+              } finally {
+                setSheetState(() => isLocating = false);
+              }
+            }
+          }
+
           Future<void> pickDate() async {
             final now = DateTime.now();
             final picked = await showDatePicker(
@@ -372,24 +474,82 @@ class _JobDetailsScreenState extends State<JobDetailsScreen> {
                           maxLines: 4,
                         ),
                         const SizedBox(height: 16),
-                        Row(
+                        _buildTextField(
+                          controller: priceController,
+                          label: 'Price (RM)',
+                          hint: '0.00',
+                          icon: Icons.attach_money_rounded,
+                          keyboardType: TextInputType.number,
+                        ),
+                        const SizedBox(height: 16),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Expanded(
-                              child: _buildTextField(
-                                controller: priceController,
-                                label: 'Price (RM)',
-                                hint: '0.00',
-                                icon: Icons.attach_money_rounded,
-                                keyboardType: TextInputType.number,
+                            Text(
+                              'Location',
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.textPrimary,
                               ),
                             ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: _buildTextField(
-                                controller: locationController,
-                                label: 'Location',
-                                hint: 'e.g. Remote, Melaka',
-                                icon: Icons.location_on_outlined,
+                            const SizedBox(height: 8),
+                            TextField(
+                              controller: locationController,
+                              onChanged: (val) {
+                                if (pickedLocation != null) {
+                                  setSheetState(() => pickedLocation = null);
+                                }
+                              },
+                              decoration: InputDecoration(
+                                hintText: 'e.g. Remote, Melaka',
+                                hintStyle: GoogleFonts.inter(color: AppColors.textHint, fontSize: 14),
+                                prefixIcon: Icon(
+                                  pickedLocation != null
+                                      ? Icons.pin_drop_rounded
+                                      : Icons.location_on_outlined,
+                                  color: pickedLocation != null ? AppColors.primary : AppColors.textHint,
+                                  size: 20,
+                                ),
+                                suffixIcon: isLocating
+                                    ? const Padding(
+                                        padding: EdgeInsets.all(12),
+                                        child: SizedBox(
+                                          width: 18,
+                                          height: 18,
+                                          child: CircularProgressIndicator(
+                                              strokeWidth: 2, color: AppColors.primary),
+                                        ),
+                                      )
+                                    : Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          IconButton(
+                                            icon: const Icon(Icons.my_location_rounded,
+                                                color: AppColors.primary, size: 20),
+                                            tooltip: 'Use current location',
+                                            onPressed: getCurrentLocation,
+                                          ),
+                                          IconButton(
+                                            icon: Icon(
+                                              pickedLocation != null
+                                                  ? Icons.pin_drop_rounded
+                                                  : Icons.map_outlined,
+                                              color: AppColors.primary,
+                                              size: 20,
+                                            ),
+                                            tooltip: 'Pin on map',
+                                            onPressed: pinOnMap,
+                                          ),
+                                        ],
+                                      ),
+                                filled: true,
+                                fillColor: AppColors.surface,
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide.none,
+                                ),
                               ),
                             ),
                           ],
@@ -547,6 +707,8 @@ class _JobDetailsScreenState extends State<JobDetailsScreen> {
                                 price: price,
                                 location: locationController.text.trim(),
                                 scheduledAt: scheduledAt,
+                                jobLatitude: pickedLocation?.latitude,
+                                jobLongitude: pickedLocation?.longitude,
                               );
 
                               if (!context.mounted) return;

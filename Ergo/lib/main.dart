@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import 'providers/profile_provider.dart';
+import 'providers/active_job_provider.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/main/main_screen.dart';
 import 'theme/app_theme.dart';
@@ -47,6 +48,7 @@ class ErgoApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => ProfileProvider()),
+        ChangeNotifierProvider(create: (_) => ActiveJobProvider()),
       ],
       child: MaterialApp(
         title: 'Ergo',

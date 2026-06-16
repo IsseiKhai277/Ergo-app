@@ -177,7 +177,7 @@ class HomeScreen extends StatelessWidget {
                   ),
                   const SizedBox(width: 12),
                   Text(
-                    '\$${job.price.toStringAsFixed(0)}',
+                    'RM ${job.price.toStringAsFixed(0)}',
                     style: GoogleFonts.inter(
                       fontSize: 20,
                       fontWeight: FontWeight.w800,

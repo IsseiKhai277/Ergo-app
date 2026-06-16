@@ -8,7 +8,10 @@ import 'package:timeago/timeago.dart' as timeago;
 import '../../theme/app_theme.dart';
 import '../../services/chat_service.dart';
 import '../messages/chat_screen.dart';
-
+import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart';
+import 'package:latlong2/latlong.dart';
+import '../jobs/location_picker_screen.dart';
 class UserProfileScreen extends StatefulWidget {
   final String userId;
 
@@ -40,8 +43,6 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
         final email = data['email'] ?? '';
         final photoUrl = data['photoUrl'] ?? data['photoURL'] ?? '';
         final role = data['role'] ?? '';
-        final rating = (data['rating'] ?? 0.0).toDouble();
-        final reviewCount = data['reviewCount'] ?? 0;
         final skills = List<String>.from(data['skills'] ?? []);
         final phone = data['phoneNumber'] ?? '';
         final isVerified = data['isVerified'] ?? false;
@@ -80,7 +81,29 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       // Rating
-                      _buildRatingCard(rating, reviewCount),
+                      StreamBuilder<QuerySnapshot>(
+                        stream: FirebaseFirestore.instance
+                            .collection('reviews')
+                            .where('userId', isEqualTo: widget.userId)
+                            .snapshots(),
+                        builder: (context, reviewsSnap) {
+                          double dynamicRating = 0.0;
+                          int dynamicReviewCount = 0;
+
+                          if (reviewsSnap.hasData && reviewsSnap.data!.docs.isNotEmpty) {
+                            final docs = reviewsSnap.data!.docs;
+                            double totalRating = 0.0;
+                            for (final doc in docs) {
+                              final rData = doc.data() as Map<String, dynamic>? ?? {};
+                              totalRating += (rData['rating'] ?? 0.0).toDouble();
+                            }
+                            dynamicReviewCount = docs.length;
+                            dynamicRating = totalRating / dynamicReviewCount;
+                          }
+
+                          return _buildRatingCard(dynamicRating, dynamicReviewCount);
+                        },
+                      ),
                       const SizedBox(height: 16),
 
                       // Skills
@@ -558,9 +581,11 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     final descController = TextEditingController();
     final priceController = TextEditingController();
     final locationController = TextEditingController();
+    bool isLocating = false;
     bool isSubmitting = false;
     DateTime? selectedDate;
     TimeOfDay? selectedTime;
+    LatLng? pickedLocation;
 
     showModalBottomSheet(
       context: context,
@@ -568,6 +593,103 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
       backgroundColor: Colors.transparent,
       builder: (context) => StatefulBuilder(
         builder: (context, setSheetState) {
+          Future<void> getCurrentLocation() async {
+            setSheetState(() => isLocating = true);
+            try {
+              bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+              if (!serviceEnabled) throw Exception('Location services are disabled.');
+
+              LocationPermission permission = await Geolocator.checkPermission();
+              if (permission == LocationPermission.denied) {
+                permission = await Geolocator.requestPermission();
+                if (permission == LocationPermission.denied) {
+                  throw Exception('Location permissions are denied');
+                }
+              }
+              if (permission == LocationPermission.deniedForever) {
+                throw Exception('Location permissions are permanently denied.');
+              }
+
+              final position = await Geolocator.getCurrentPosition(
+                  locationSettings:
+                      const LocationSettings(accuracy: LocationAccuracy.high));
+              final placemarks =
+                  await placemarkFromCoordinates(position.latitude, position.longitude);
+
+              if (placemarks.isNotEmpty) {
+                final place = placemarks[0];
+                String address = '';
+                if (place.street != null && place.street!.isNotEmpty) {
+                  address += '${place.street}, ';
+                }
+                if (place.locality != null && place.locality!.isNotEmpty) {
+                  address += '${place.locality}, ';
+                }
+                address += '${place.country}';
+                setSheetState(() {
+                  locationController.text =
+                      address.replaceAll(RegExp(r',\s*$'), '');
+                  pickedLocation = LatLng(position.latitude, position.longitude);
+                });
+              }
+            } catch (e) {
+              if (context.mounted) {
+                ScaffoldMessenger.of(context)
+                    .showSnackBar(SnackBar(content: Text(e.toString())));
+              }
+            } finally {
+              setSheetState(() => isLocating = false);
+            }
+          }
+
+          Future<void> pinOnMap() async {
+            final result = await Navigator.push<LatLng?>(
+              context,
+              MaterialPageRoute(
+                builder: (_) => LocationPickerScreen(
+                  initialLocation: pickedLocation,
+                ),
+              ),
+            );
+            if (result != null) {
+              setSheetState(() {
+                pickedLocation = result;
+                isLocating = true;
+              });
+              try {
+                final placemarks =
+                    await placemarkFromCoordinates(result.latitude, result.longitude);
+                if (placemarks.isNotEmpty) {
+                  final place = placemarks[0];
+                  String address = '';
+                  if (place.street != null && place.street!.isNotEmpty) {
+                    address += '${place.street}, ';
+                  }
+                  if (place.locality != null && place.locality!.isNotEmpty) {
+                    address += '${place.locality}, ';
+                  }
+                  address += '${place.country}';
+                  setSheetState(() {
+                    locationController.text =
+                        address.replaceAll(RegExp(r',\s*$'), '');
+                  });
+                } else {
+                  setSheetState(() {
+                    locationController.text =
+                        '${result.latitude.toStringAsFixed(4)}, ${result.longitude.toStringAsFixed(4)}';
+                  });
+                }
+              } catch (_) {
+                setSheetState(() {
+                  locationController.text =
+                      '${result.latitude.toStringAsFixed(4)}, ${result.longitude.toStringAsFixed(4)}';
+                });
+              } finally {
+                setSheetState(() => isLocating = false);
+              }
+            }
+          }
+
           Future<void> pickDate() async {
             final now = DateTime.now();
             final picked = await showDatePicker(
@@ -658,38 +780,96 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                     child: Column(
                       children: [
                         _buildTextField(
-                          controller: titleController,
-                          label: 'Job Title',
-                          hint: 'e.g. Need a logo design',
-                          icon: Icons.work_outline_rounded,
+                           controller: titleController,
+                           label: 'Job Title',
+                           hint: 'e.g. Need a logo design',
+                           icon: Icons.work_outline_rounded,
                         ),
                         const SizedBox(height: 16),
                         _buildTextField(
-                          controller: descController,
-                          label: 'Description',
-                          hint: 'Describe what you need...',
-                          icon: Icons.description_outlined,
-                          maxLines: 4,
+                           controller: descController,
+                           label: 'Description',
+                           hint: 'Describe what you need...',
+                           icon: Icons.description_outlined,
+                           maxLines: 4,
                         ),
                         const SizedBox(height: 16),
-                        Row(
+                        _buildTextField(
+                          controller: priceController,
+                          label: 'Price (RM)',
+                          hint: '0.00',
+                          icon: Icons.attach_money_rounded,
+                          keyboardType: TextInputType.number,
+                        ),
+                        const SizedBox(height: 16),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Expanded(
-                              child: _buildTextField(
-                                controller: priceController,
-                                label: 'Price (RM)',
-                                hint: '0.00',
-                                icon: Icons.attach_money_rounded,
-                                keyboardType: TextInputType.number,
+                            Text(
+                              'Location',
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.textPrimary,
                               ),
                             ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: _buildTextField(
-                                controller: locationController,
-                                label: 'Location',
-                                hint: 'e.g. Remote, Melaka',
-                                icon: Icons.location_on_outlined,
+                            const SizedBox(height: 8),
+                            TextField(
+                              controller: locationController,
+                              onChanged: (val) {
+                                if (pickedLocation != null) {
+                                  setSheetState(() => pickedLocation = null);
+                                }
+                              },
+                              decoration: InputDecoration(
+                                hintText: 'e.g. Remote, Melaka',
+                                hintStyle: GoogleFonts.inter(color: AppColors.textHint, fontSize: 14),
+                                prefixIcon: Icon(
+                                  pickedLocation != null
+                                      ? Icons.pin_drop_rounded
+                                      : Icons.location_on_outlined,
+                                  color: pickedLocation != null ? AppColors.primary : AppColors.textHint,
+                                  size: 20,
+                                ),
+                                suffixIcon: isLocating
+                                    ? const Padding(
+                                        padding: EdgeInsets.all(12),
+                                        child: SizedBox(
+                                          width: 18,
+                                          height: 18,
+                                          child: CircularProgressIndicator(
+                                              strokeWidth: 2, color: AppColors.primary),
+                                        ),
+                                      )
+                                    : Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          IconButton(
+                                            icon: const Icon(Icons.my_location_rounded,
+                                                color: AppColors.primary, size: 20),
+                                            tooltip: 'Use current location',
+                                            onPressed: getCurrentLocation,
+                                          ),
+                                          IconButton(
+                                            icon: Icon(
+                                              pickedLocation != null
+                                                  ? Icons.pin_drop_rounded
+                                                  : Icons.map_outlined,
+                                              color: AppColors.primary,
+                                              size: 20,
+                                            ),
+                                            tooltip: 'Pin on map',
+                                            onPressed: pinOnMap,
+                                          ),
+                                        ],
+                                      ),
+                                filled: true,
+                                fillColor: AppColors.surface,
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide.none,
+                                ),
                               ),
                             ),
                           ],
@@ -833,6 +1013,19 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                               // Create conversation
                               final convId = await ChatService.getOrCreateConversation(widget.userId);
                               
+                              LatLng? finalLocation = pickedLocation;
+                              final locationText = locationController.text.trim();
+                              if (finalLocation == null && locationText.isNotEmpty) {
+                                try {
+                                  final locations = await locationFromAddress(locationText);
+                                  if (locations.isNotEmpty) {
+                                    finalLocation = LatLng(locations[0].latitude, locations[0].longitude);
+                                  }
+                                } catch (_) {
+                                  // Fallback to null
+                                }
+                              }
+
                               // Send job offer message
                               await ChatService.sendJobOffer(
                                 conversationId: convId,
@@ -840,8 +1033,10 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                                 title: title,
                                 description: descController.text.trim(),
                                 price: price,
-                                location: locationController.text.trim(),
+                                location: locationText,
                                 scheduledAt: scheduledAt,
+                                jobLatitude: finalLocation?.latitude,
+                                jobLongitude: finalLocation?.longitude,
                               );
 
                               if (!context.mounted) return;
