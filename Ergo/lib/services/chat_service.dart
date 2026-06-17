@@ -53,6 +53,23 @@ class ChatService {
     });
   }
 
+  // ─── Stream the number of conversations with unread messages ──────────────
+  static Stream<int> streamUnreadConversationsCount() {
+    return _db
+        .collection('conversations')
+        .where('participantIds', arrayContains: _currentUid)
+        .snapshots()
+        .map((snap) {
+      final uid = _currentUid;
+      if (uid.isEmpty) return 0;
+      return snap.docs.where((d) {
+        final unreadCountMap = Map<String, dynamic>.from(d.data()['unreadCount'] ?? {});
+        final count = (unreadCountMap[uid] as num?)?.toInt() ?? 0;
+        return count > 0;
+      }).length;
+    });
+  }
+
   // ─── Stream messages in a conversation ───────────────────────────────────
   static Stream<List<MessageModel>> streamMessages(String conversationId) {
     return _db
@@ -276,4 +293,35 @@ class ChatService {
       orElse: () => '',
     );
   }
+
+  // ─── Delete conversations (deletes conversation documents and clean up subcollection messages in background) ───
+  static Future<void> deleteConversations(List<String> conversationIds) async {
+    final batch = _db.batch();
+    for (final id in conversationIds) {
+      batch.delete(_db.collection('conversations').doc(id));
+    }
+    await batch.commit();
+
+    // Clean up messages in the background asynchronously
+    for (final id in conversationIds) {
+      _db
+          .collection('conversations')
+          .doc(id)
+          .collection('messages')
+          .get()
+          .then((snap) {
+        final innerBatch = _db.batch();
+        for (final doc in snap.docs) {
+          innerBatch.delete(doc.reference);
+        }
+        innerBatch.commit().catchError((e) {
+          // Silent catch or debug print
+          print('Error deleting messages for conversation $id: $e');
+        });
+      }).catchError((e) {
+        print('Error fetching messages for conversation $id: $e');
+      });
+    }
+  }
 }
+

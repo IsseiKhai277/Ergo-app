@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:provider/provider.dart';
+import '../../providers/profile_provider.dart';
 import '../../services/auth_service.dart';
 import '../../theme/app_theme.dart';
 
@@ -74,101 +76,111 @@ class SettingsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        title: const Text('Settings'),
-        backgroundColor: AppColors.surface,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
-          onPressed: () => Navigator.pop(context),
-        ),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          // ── Account Section ──────────────────────────────────────────────
-          _buildSectionLabel('Account'),
-          const SizedBox(height: 8),
-          _buildSettingsCard([
-            _buildTile(
-              icon: Icons.lock_outline_rounded,
-              iconColor: AppColors.primary,
-              title: 'Change Password',
-              subtitle: 'Send reset link to your email',
-              onTap: () => _changePassword(context),
-            ),
-            const Divider(height: 1, indent: 56),
-            _buildTile(
-              icon: Icons.logout_rounded,
-              iconColor: AppColors.error,
-              title: 'Logout',
-              subtitle: 'Sign out of your account',
-              titleColor: AppColors.error,
-              onTap: () => _logout(context),
-            ),
-          ]),
-          const SizedBox(height: 20),
+    return Consumer<ProfileProvider>(
+      builder: (context, provider, _) {
+        final profile = provider.profile;
+        final showLocation = profile?.showLocation ?? false;
 
-          // ── Notifications Section ─────────────────────────────────────────
-          _buildSectionLabel('Notifications'),
-          const SizedBox(height: 8),
-          _buildSettingsCard([
-            _buildToggleTile(
-              icon: Icons.notifications_outlined,
-              iconColor: const Color(0xFFF59E0B),
-              title: 'Push Notifications',
-              subtitle: 'Receive alerts for new messages and jobs',
-              initialValue: true,
+        return Scaffold(
+          backgroundColor: AppColors.background,
+          appBar: AppBar(
+            title: const Text('Settings'),
+            backgroundColor: AppColors.surface,
+            elevation: 0,
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
+              onPressed: () => Navigator.pop(context),
             ),
-            const Divider(height: 1, indent: 56),
-            _buildToggleTile(
-              icon: Icons.email_outlined,
-              iconColor: AppColors.accent,
-              title: 'Email Notifications',
-              subtitle: 'Receive email updates',
-              initialValue: true,
-            ),
-          ]),
-          const SizedBox(height: 20),
+          ),
+          body: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              // ── Account Section ──────────────────────────────────────────────
+              _buildSectionLabel('Account'),
+              const SizedBox(height: 8),
+              _buildSettingsCard([
+                _buildTile(
+                  icon: Icons.lock_outline_rounded,
+                  iconColor: AppColors.primary,
+                  title: 'Change Password',
+                  subtitle: 'Send reset link to your email',
+                  onTap: () => _changePassword(context),
+                ),
+                const Divider(height: 1, indent: 56),
+                _buildTile(
+                  icon: Icons.logout_rounded,
+                  iconColor: AppColors.error,
+                  title: 'Logout',
+                  subtitle: 'Sign out of your account',
+                  titleColor: AppColors.error,
+                  onTap: () => _logout(context),
+                ),
+              ]),
+              const SizedBox(height: 20),
 
-          // ── Privacy Section ───────────────────────────────────────────────
-          _buildSectionLabel('Privacy'),
-          const SizedBox(height: 8),
-          _buildSettingsCard([
-            _buildToggleTile(
-              icon: Icons.visibility_outlined,
-              iconColor: const Color(0xFF8B5CF6),
-              title: 'Profile Visibility',
-              subtitle: 'Allow others to find your profile',
-              initialValue: true,
-            ),
-            const Divider(height: 1, indent: 56),
-            _buildToggleTile(
-              icon: Icons.location_on_outlined,
-              iconColor: const Color(0xFFEF4444),
-              title: 'Show Location',
-              subtitle: 'Display your city on your profile',
-              initialValue: false,
-            ),
-          ]),
-          const SizedBox(height: 20),
+              // ── Notifications Section ─────────────────────────────────────────
+              _buildSectionLabel('Notifications'),
+              const SizedBox(height: 8),
+              _buildSettingsCard([
+                _buildToggleTile(
+                  icon: Icons.notifications_outlined,
+                  iconColor: const Color(0xFFF59E0B),
+                  title: 'Push Notifications',
+                  subtitle: 'Receive alerts for new messages and jobs',
+                  initialValue: true,
+                ),
+                const Divider(height: 1, indent: 56),
+                _buildToggleTile(
+                  icon: Icons.email_outlined,
+                  iconColor: AppColors.accent,
+                  title: 'Email Notifications',
+                  subtitle: 'Receive email updates',
+                  initialValue: true,
+                ),
+              ]),
+              const SizedBox(height: 20),
 
-          // ── App Info ──────────────────────────────────────────────────────
-          _buildSectionLabel('App'),
-          const SizedBox(height: 8),
-          _buildSettingsCard([
-            _buildTile(
-              icon: Icons.info_outline_rounded,
-              iconColor: AppColors.textSecondary,
-              title: 'About Ergo',
-              subtitle: 'Version 1.0.0',
-              onTap: () {},
-            ),
-          ]),
-        ],
-      ),
+              // ── Privacy Section ───────────────────────────────────────────────
+              _buildSectionLabel('Privacy'),
+              const SizedBox(height: 8),
+              _buildSettingsCard([
+                _buildToggleTile(
+                  icon: Icons.visibility_outlined,
+                  iconColor: const Color(0xFF8B5CF6),
+                  title: 'Profile Visibility',
+                  subtitle: 'Allow others to find your profile',
+                  initialValue: true,
+                ),
+                const Divider(height: 1, indent: 56),
+                _buildToggleTile(
+                  icon: Icons.location_on_outlined,
+                  iconColor: const Color(0xFFEF4444),
+                  title: 'Show Location',
+                  subtitle: 'Display your city on your profile',
+                  initialValue: showLocation,
+                  onChanged: (v) async {
+                    await provider.updateShowLocation(v);
+                  },
+                ),
+              ]),
+              const SizedBox(height: 20),
+
+              // ── App Info ──────────────────────────────────────────────────────
+              _buildSectionLabel('App'),
+              const SizedBox(height: 8),
+              _buildSettingsCard([
+                _buildTile(
+                  icon: Icons.info_outline_rounded,
+                  iconColor: AppColors.textSecondary,
+                  title: 'About Ergo',
+                  subtitle: 'Version 1.0.0',
+                  onTap: () {},
+                ),
+              ]),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -246,6 +258,7 @@ class SettingsScreen extends StatelessWidget {
     required String title,
     required String subtitle,
     required bool initialValue,
+    ValueChanged<bool>? onChanged,
   }) {
     return _ToggleTile(
       icon: icon,
@@ -253,6 +266,7 @@ class SettingsScreen extends StatelessWidget {
       title: title,
       subtitle: subtitle,
       initialValue: initialValue,
+      onChanged: onChanged,
     );
   }
 }
@@ -264,6 +278,7 @@ class _ToggleTile extends StatefulWidget {
   final String title;
   final String subtitle;
   final bool initialValue;
+  final ValueChanged<bool>? onChanged;
 
   const _ToggleTile({
     required this.icon,
@@ -271,6 +286,7 @@ class _ToggleTile extends StatefulWidget {
     required this.title,
     required this.subtitle,
     required this.initialValue,
+    this.onChanged,
   });
 
   @override
@@ -284,6 +300,14 @@ class _ToggleTileState extends State<_ToggleTile> {
   void initState() {
     super.initState();
     _value = widget.initialValue;
+  }
+
+  @override
+  void didUpdateWidget(covariant _ToggleTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.initialValue != widget.initialValue) {
+      _value = widget.initialValue;
+    }
   }
 
   @override
@@ -314,7 +338,12 @@ class _ToggleTileState extends State<_ToggleTile> {
       ),
       trailing: Switch(
         value: _value,
-        onChanged: (v) => setState(() => _value = v),
+        onChanged: (v) {
+          setState(() => _value = v);
+          if (widget.onChanged != null) {
+            widget.onChanged!(v);
+          }
+        },
         activeColor: AppColors.primary,
       ),
     );

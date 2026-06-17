@@ -80,15 +80,17 @@ class ProfileService {
     required File resumeFile,
     required String fileName,
   }) async {
-    final extension = fileName.split('.').last;
+    final extension = fileName.split('.').last.toLowerCase();
     final ref = _storage.ref().child('resumes/$uid/resume.$extension');
 
     final contentType = extension == 'pdf'
         ? 'application/pdf'
         : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
-    final task = await ref.putFile(
-      resumeFile,
+    // Use readAsBytes and putData to bypass file path issues on Android/iOS
+    final bytes = await resumeFile.readAsBytes();
+    final task = await ref.putData(
+      bytes,
       SettableMetadata(contentType: contentType),
     );
     return await task.ref.getDownloadURL();

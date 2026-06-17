@@ -103,6 +103,7 @@ class ProfileProvider extends ChangeNotifier {
     required String fullName,
     required String phoneNumber,
     required String bio,
+    String location = '',
   }) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return false;
@@ -118,6 +119,7 @@ class ProfileProvider extends ChangeNotifier {
           'fullName': fullName.trim(),
           'phoneNumber': phoneNumber.trim(),
           'bio': bio.trim(),
+          'location': location.trim(),
         },
       );
 
@@ -131,6 +133,26 @@ class ProfileProvider extends ChangeNotifier {
     } catch (e) {
       _errorMessage = 'Failed to update profile: $e';
       _isUpdating = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  // ─── Update Show Location Setting ──────────────────────────────────────────
+  Future<bool> updateShowLocation(bool value) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return false;
+
+    try {
+      await ProfileService.updateProfile(
+        uid: uid,
+        data: {
+          'showLocation': value,
+        },
+      );
+      return true;
+    } catch (e) {
+      _errorMessage = 'Failed to update location visibility: $e';
       notifyListeners();
       return false;
     }
@@ -228,6 +250,64 @@ class ProfileProvider extends ChangeNotifier {
       return skills;
     } catch (e) {
       _errorMessage = 'Failed to process resume: $e';
+      _isUploadingResume = false;
+      notifyListeners();
+      return [];
+    }
+  }
+
+  // ─── Upload Resume Only ───────────────────────────────────────────────────
+  Future<bool> uploadResumeOnly({
+    required File resumeFile,
+    required String fileName,
+  }) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return false;
+
+    _isUploadingResume = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      // 1. Upload resume file to Firebase Storage
+      final resumeUrl = await ProfileService.uploadResume(
+        uid: uid,
+        resumeFile: resumeFile,
+        fileName: fileName,
+      );
+
+      // 2. Save resume URL to Firestore
+      await ProfileService.saveResumeUrl(uid: uid, resumeUrl: resumeUrl);
+
+      _isUploadingResume = false;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _errorMessage = 'Failed to upload resume: $e';
+      _isUploadingResume = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  // ─── Extract Skills From Uploaded Resume ──────────────────────────────────
+  Future<List<String>> extractSkillsFromUploadedResume() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final resumeUrl = _profile?.resumeUrl;
+    if (uid == null || resumeUrl == null || resumeUrl.isEmpty) return [];
+
+    _isUploadingResume = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      final skills = await ResumeAIService.extractSkills(resumeUrl: resumeUrl);
+
+      _isUploadingResume = false;
+      notifyListeners();
+      return skills;
+    } catch (e) {
+      _errorMessage = 'Failed to extract skills: $e';
       _isUploadingResume = false;
       notifyListeners();
       return [];

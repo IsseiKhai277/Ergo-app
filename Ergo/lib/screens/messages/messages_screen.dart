@@ -22,10 +22,93 @@ class _MessagesScreenState extends State<MessagesScreen> {
 
   final List<String> _filters = ['All Messages', 'Unread', 'Archived'];
 
+  // Multi-select state
+  bool _isSelectMode = false;
+  final Set<String> _selectedConversationIds = {};
+  List<ConversationModel> _currentVisibleConversations = [];
+
   @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  Future<void> _showDeleteConfirmDialog() async {
+    if (_selectedConversationIds.isEmpty) return;
+
+    final count = _selectedConversationIds.length;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(
+          'Delete $count ${count == 1 ? 'chat' : 'chats'}?',
+          style: GoogleFonts.inter(fontWeight: FontWeight.bold),
+        ),
+        content: Text(
+          'Are you sure you want to delete these conversations? This action cannot be undone.',
+          style: GoogleFonts.inter(),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.inter(color: AppColors.textSecondary),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(
+              'Delete',
+              style: GoogleFonts.inter(
+                color: Colors.redAccent,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      if (!mounted) return;
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => const Center(
+          child: CircularProgressIndicator(color: AppColors.primary),
+        ),
+      );
+
+      try {
+        await ChatService.deleteConversations(_selectedConversationIds.toList());
+        if (mounted) {
+          Navigator.pop(context); // Dismiss loading spinner
+          setState(() {
+            _isSelectMode = false;
+            _selectedConversationIds.clear();
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                '$count ${count == 1 ? 'chat' : 'chats'} deleted successfully.',
+              ),
+              backgroundColor: AppColors.success,
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          Navigator.pop(context); // Dismiss loading spinner
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to delete chats: $e'),
+              backgroundColor: AppColors.error,
+            ),
+          );
+        }
+      }
+    }
   }
 
   @override
@@ -42,15 +125,69 @@ class _MessagesScreenState extends State<MessagesScreen> {
           Expanded(child: _buildConversationList()),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {},
-        backgroundColor: AppColors.primary,
-        child: const Icon(Icons.edit_rounded, color: Colors.white),
-      ),
+      floatingActionButton: _isSelectMode
+          ? null
+          : FloatingActionButton(
+              onPressed: () {},
+              backgroundColor: AppColors.primary,
+              child: const Icon(Icons.edit_rounded, color: Colors.white),
+            ),
     );
   }
 
   PreferredSizeWidget _buildAppBar() {
+    if (_isSelectMode) {
+      return AppBar(
+        backgroundColor: AppColors.surface,
+        elevation: 1,
+        leading: IconButton(
+          icon: const Icon(Icons.close, color: AppColors.textPrimary),
+          onPressed: () {
+            setState(() {
+              _isSelectMode = false;
+              _selectedConversationIds.clear();
+            });
+          },
+        ),
+        title: Text(
+          '${_selectedConversationIds.length} Selected',
+          style: GoogleFonts.inter(
+            color: AppColors.textPrimary,
+            fontWeight: FontWeight.w600,
+            fontSize: 16,
+          ),
+        ),
+        actions: [
+          IconButton(
+            icon: Icon(
+              _selectedConversationIds.length == _currentVisibleConversations.length
+                  ? Icons.deselect_rounded
+                  : Icons.select_all_rounded,
+              color: AppColors.primary,
+            ),
+            onPressed: () {
+              setState(() {
+                if (_selectedConversationIds.length == _currentVisibleConversations.length) {
+                  _selectedConversationIds.clear();
+                } else {
+                  _selectedConversationIds.addAll(
+                    _currentVisibleConversations.map((c) => c.id),
+                  );
+                }
+              });
+            },
+            tooltip: _selectedConversationIds.length == _currentVisibleConversations.length
+                ? 'Deselect All'
+                : 'Select All',
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent),
+            onPressed: _showDeleteConfirmDialog,
+            tooltip: 'Delete selected',
+          ),
+        ],
+      );
+    }
     return AppBar(
       backgroundColor: AppColors.surface,
       elevation: 0,
@@ -163,6 +300,8 @@ class _MessagesScreenState extends State<MessagesScreen> {
               .toList();
         }
 
+        _currentVisibleConversations = conversations;
+
         if (conversations.isEmpty) {
           return Center(
             child: Column(
@@ -192,10 +331,33 @@ class _MessagesScreenState extends State<MessagesScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 16),
           itemCount: conversations.length,
           separatorBuilder: (_, __) => const SizedBox(height: 4),
-          itemBuilder: (_, i) => _ConversationTile(
-            conversation: conversations[i],
-            currentUid: uid,
-          ),
+          itemBuilder: (_, i) {
+            final conversation = conversations[i];
+            return _ConversationTile(
+              conversation: conversation,
+              currentUid: uid,
+              isSelectMode: _isSelectMode,
+              isSelected: _selectedConversationIds.contains(conversation.id),
+              onTap: () {
+                setState(() {
+                  if (_selectedConversationIds.contains(conversation.id)) {
+                    _selectedConversationIds.remove(conversation.id);
+                    if (_selectedConversationIds.isEmpty) {
+                      _isSelectMode = false;
+                    }
+                  } else {
+                    _selectedConversationIds.add(conversation.id);
+                  }
+                });
+              },
+              onLongPress: () {
+                setState(() {
+                  _isSelectMode = true;
+                  _selectedConversationIds.add(conversation.id);
+                });
+              },
+            );
+          },
         );
       },
     );
@@ -207,10 +369,18 @@ class _MessagesScreenState extends State<MessagesScreen> {
 class _ConversationTile extends StatelessWidget {
   final ConversationModel conversation;
   final String currentUid;
+  final bool isSelectMode;
+  final bool isSelected;
+  final VoidCallback onTap;
+  final VoidCallback onLongPress;
 
   const _ConversationTile({
     required this.conversation,
     required this.currentUid,
+    required this.isSelectMode,
+    required this.isSelected,
+    required this.onTap,
+    required this.onLongPress,
   });
 
   @override
@@ -227,26 +397,48 @@ class _ConversationTile extends StatelessWidget {
         final photoUrl = data['photoUrl'] ?? data['photoURL'] ?? '';
 
         return GestureDetector(
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => ChatScreen(
-                conversationId: conversation.id,
-                otherUserId: otherUid,
-                otherUserName: name,
-                otherUserPhotoUrl: photoUrl,
-                otherUserRole: role,
-              ),
-            ),
-          ),
+          onTap: isSelectMode
+              ? onTap
+              : () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ChatScreen(
+                        conversationId: conversation.id,
+                        otherUserId: otherUid,
+                        otherUserName: name,
+                        otherUserPhotoUrl: photoUrl,
+                        otherUserRole: role,
+                      ),
+                    ),
+                  ),
+          onLongPress: onLongPress,
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
             decoration: BoxDecoration(
-              color: AppColors.surface,
+              color: isSelected
+                  ? AppColors.primary.withOpacity(0.08)
+                  : AppColors.surface,
               borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: isSelected
+                    ? AppColors.primary.withOpacity(0.3)
+                    : Colors.transparent,
+                width: 1.5,
+              ),
             ),
             child: Row(
               children: [
+                if (isSelectMode) ...[
+                  Checkbox(
+                    value: isSelected,
+                    activeColor: AppColors.primary,
+                    onChanged: (_) => onTap(),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                ],
                 // Avatar with online dot
                 Stack(
                   children: [

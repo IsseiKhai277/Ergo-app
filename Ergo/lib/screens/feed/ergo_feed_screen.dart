@@ -537,24 +537,29 @@ class _PostCardState extends State<_PostCard> {
                             ),
                           ),
                           const SizedBox(width: 6),
-                          if (post.posterRole.isNotEmpty)
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: AppColors.success,
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(
-                                post.posterRole.toUpperCase(),
-                                style: GoogleFonts.inter(
-                                  fontSize: 9,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.white,
-                                  letterSpacing: 0.5,
-                                ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: post.posterResumeUrl.isEmpty
+                                  ? const Color(0xFF64748B)
+                                  : const Color(0xFF10B981),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              post.posterResumeUrl.isEmpty
+                                  ? 'UNVERIFIED'
+                                  : (post.posterRole.isNotEmpty
+                                      ? post.posterRole.toUpperCase()
+                                      : 'WORKER'),
+                              style: GoogleFonts.inter(
+                                fontSize: 9,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                                letterSpacing: 0.5,
                               ),
                             ),
+                          ),
                         ],
                       ),
                       Text(

@@ -16,6 +16,8 @@ class UserProfile {
   final bool verified;
   final bool profileComplete;
   final String role; // 'worker' or 'client'
+  final String location;
+  final bool showLocation;
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -33,6 +35,8 @@ class UserProfile {
     this.verified = false,
     this.profileComplete = false,
     this.role = 'worker',
+    this.location = '',
+    this.showLocation = false,
     this.createdAt,
     this.updatedAt,
   });
@@ -53,6 +57,8 @@ class UserProfile {
       verified: map['verified'] as bool? ?? false,
       profileComplete: map['profileComplete'] as bool? ?? false,
       role: map['role'] as String? ?? 'worker',
+      location: map['location'] as String? ?? '',
+      showLocation: map['showLocation'] as bool? ?? false,
       createdAt: (map['createdAt'] as Timestamp?)?.toDate(),
       updatedAt: (map['updatedAt'] as Timestamp?)?.toDate(),
     );
@@ -74,6 +80,8 @@ class UserProfile {
       'verified': verified,
       'profileComplete': profileComplete,
       'role': role,
+      'location': location,
+      'showLocation': showLocation,
       'updatedAt': FieldValue.serverTimestamp(),
     };
   }
@@ -109,6 +117,8 @@ class UserProfile {
     bool? verified,
     bool? profileComplete,
     String? role,
+    String? location,
+    bool? showLocation,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -126,6 +136,8 @@ class UserProfile {
       verified: verified ?? this.verified,
       profileComplete: profileComplete ?? this.profileComplete,
       role: role ?? this.role,
+      location: location ?? this.location,
+      showLocation: showLocation ?? this.showLocation,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );

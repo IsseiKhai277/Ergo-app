@@ -14,6 +14,7 @@ class PostModel {
   final String posterPhotoUrl;
   final String posterRole;
   final double posterRating;
+  final String posterResumeUrl;
 
   // Runtime state (not stored in Firestore)
   final bool isLikedByCurrentUser;
@@ -30,6 +31,7 @@ class PostModel {
     this.posterPhotoUrl = '',
     this.posterRole = '',
     this.posterRating = 0.0,
+    this.posterResumeUrl = '',
     this.isLikedByCurrentUser = false,
   });
 
@@ -68,6 +70,7 @@ class PostModel {
     String? posterPhotoUrl,
     String? posterRole,
     double? posterRating,
+    String? posterResumeUrl,
     bool? isLikedByCurrentUser,
   }) {
     return PostModel(
@@ -82,6 +85,7 @@ class PostModel {
       posterPhotoUrl: posterPhotoUrl ?? this.posterPhotoUrl,
       posterRole: posterRole ?? this.posterRole,
       posterRating: posterRating ?? this.posterRating,
+      posterResumeUrl: posterResumeUrl ?? this.posterResumeUrl,
       isLikedByCurrentUser: isLikedByCurrentUser ?? this.isLikedByCurrentUser,
     );
   }

@@ -17,6 +17,10 @@ import '../../widgets/skill_chip.dart';
 import 'edit_profile_screen.dart';
 import 'reviews_screen.dart';
 import 'settings_screen.dart';
+import '../../models/post_model.dart';
+import '../../models/comment_model.dart';
+import '../../services/feed_post_service.dart';
+import '../../services/feed_comment_service.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -62,14 +66,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel',
-                style: TextStyle(color: AppColors.textSecondary)),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: AppColors.textSecondary),
+            ),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               minimumSize: Size.zero,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
             ),
             onPressed: () => Navigator.pop(ctx, controller.text),
             child: const Text('Add'),
@@ -83,7 +88,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     });
   }
 
-  // ─── AI Resume Upload ──────────────────────────────────────────────────────
+  // ─── Resume Upload ─────────────────────────────────────────────────────────
   Future<void> _handleResumeUpload() async {
     FilePickerResult? result;
     try {
@@ -93,7 +98,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         allowMultiple: false,
       );
     } catch (_) {
-      // File picker cancelled or unavailable
       return;
     }
 
@@ -102,17 +106,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final file = result.files.first;
     if (file.path == null) return;
 
-    // Show loading dialog
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => const _LoadingDialog(
-        message: 'Uploading resume & extracting skills...',
-      ),
+      builder: (_) => const _LoadingDialog(message: 'Uploading resume...'),
     );
 
     final provider = context.read<ProfileProvider>();
-    final suggestedSkills = await provider.uploadResumeAndExtractSkills(
+    final success = await provider.uploadResumeOnly(
       resumeFile: File(file.path!),
       fileName: file.name,
     );
@@ -120,22 +121,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (!mounted) return;
     Navigator.pop(context); // close loading dialog
 
-    if (suggestedSkills.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content:
-              Text(provider.errorMessage ?? 'No skills found in resume.'),
-          backgroundColor: AppColors.error,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-          margin: const EdgeInsets.all(16),
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          success
+              ? 'Resume uploaded successfully!'
+              : (provider.errorMessage ?? 'Failed to upload resume.'),
         ),
-      );
-      return;
-    }
-
-    // Show skill confirmation modal
-    _showSkillConfirmationModal(suggestedSkills);
+        backgroundColor: success ? AppColors.success : AppColors.error,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        margin: const EdgeInsets.all(16),
+      ),
+    );
   }
 
   // ─── Skill Confirmation Modal ──────────────────────────────────────────────
@@ -172,8 +170,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   const SizedBox(height: 16),
                   const Row(
                     children: [
-                      Icon(Icons.auto_awesome_rounded,
-                          color: AppColors.primary, size: 20),
+                      Icon(
+                        Icons.auto_awesome_rounded,
+                        color: AppColors.primary,
+                        size: 20,
+                      ),
                       SizedBox(width: 8),
                       Expanded(
                         child: Column(
@@ -247,19 +248,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             if (selectedSkills.isNotEmpty && mounted) {
                               // Merge with existing skills (deduplicate)
                               final existing =
-                                  context.read<ProfileProvider>().profile?.skills ?? [];
+                                  context
+                                      .read<ProfileProvider>()
+                                      .profile
+                                      ?.skills ??
+                                  [];
                               final merged = {
                                 ...existing,
                                 ...selectedSkills,
                               }.toList();
-                              await context
-                                  .read<ProfileProvider>()
-                                  .saveSkills(merged);
+                              await context.read<ProfileProvider>().saveSkills(
+                                merged,
+                              );
                               if (mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
                                     content: Text(
-                                        '${selectedSkills.length} skills added!'),
+                                      '${selectedSkills.length} skills added!',
+                                    ),
                                     backgroundColor: AppColors.success,
                                     behavior: SnackBarBehavior.floating,
                                     shape: RoundedRectangleBorder(
@@ -317,11 +323,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 elevation: 0,
                 actions: [
                   IconButton(
-                    icon: const Icon(Icons.settings_rounded, color: Colors.white),
+                    icon: const Icon(
+                      Icons.settings_rounded,
+                      color: Colors.white,
+                    ),
                     onPressed: () => Navigator.push(
                       context,
-                      MaterialPageRoute(
-                          builder: (_) => const SettingsScreen()),
+                      MaterialPageRoute(builder: (_) => const SettingsScreen()),
                     ),
                   ),
                 ],
@@ -493,9 +501,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(
-            isVerified
-                ? Icons.verified_rounded
-                : Icons.warning_amber_rounded,
+            isVerified ? Icons.verified_rounded : Icons.warning_amber_rounded,
             size: 13,
             color: isVerified
                 ? const Color(0xFF4ADE80)
@@ -580,8 +586,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 color: const Color(0xFFFEF3C7),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: const Icon(Icons.star_rounded,
-                  color: Color(0xFFFBBF24), size: 24),
+              child: const Icon(
+                Icons.star_rounded,
+                color: Color(0xFFFBBF24),
+                size: 24,
+              ),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -618,8 +627,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right_rounded,
-                color: AppColors.textHint),
+            const Icon(Icons.chevron_right_rounded, color: AppColors.textHint),
           ],
         ),
       ),
@@ -658,8 +666,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
               label: const Text('Add Skill'),
               style: TextButton.styleFrom(
                 foregroundColor: AppColors.primary,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
                 textStyle: const TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
@@ -674,10 +684,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               padding: EdgeInsets.symmetric(vertical: 8),
               child: Text(
                 'No skills added yet. Add skills to improve your profile.',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: AppColors.textSecondary,
-                ),
+                style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
               ),
             )
           else
@@ -685,11 +692,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
               spacing: 8,
               runSpacing: 8,
               children: skills
-                  .map((skill) => SkillChip(
-                        label: skill,
-                        onRemove: () =>
-                            provider.removeSkill(skill),
-                      ))
+                  .map(
+                    (skill) => SkillChip(
+                      label: skill,
+                      onRemove: () => provider.removeSkill(skill),
+                    ),
+                  )
                   .toList(),
             ),
 
@@ -709,14 +717,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                     )
                   : const Icon(Icons.auto_awesome_rounded, size: 18),
-              label: Text(provider.isUploadingResume
-                  ? 'Processing...'
-                  : 'AI Detect from Resume'),
+              label: Text(
+                provider.isUploadingResume
+                    ? 'Processing...'
+                    : 'AI Detect from Resume',
+              ),
               style: OutlinedButton.styleFrom(
                 minimumSize: const Size(double.infinity, 44),
               ),
-              onPressed:
-                  provider.isUploadingResume ? null : _handleResumeUpload,
+              onPressed: provider.isUploadingResume
+                  ? null
+                  : _handleResumeUpload,
             ),
           ),
         ],
@@ -746,8 +757,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
           SectionHeader(
             title: 'Contact Information',
             action: IconButton(
-              icon: const Icon(Icons.edit_outlined,
-                  size: 18, color: AppColors.primary),
+              icon: const Icon(
+                Icons.edit_outlined,
+                size: 18,
+                color: AppColors.primary,
+              ),
               onPressed: () => Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -772,7 +786,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
           _buildContactRow(
             icon: Icons.email_rounded,
             label: 'Email',
-            value: profile?.email ?? FirebaseAuth.instance.currentUser?.email ?? '',
+            value:
+                profile?.email ??
+                FirebaseAuth.instance.currentUser?.email ??
+                '',
           ),
         ],
       ),
@@ -852,8 +869,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
           if (hasResume)
             Row(
               children: [
-                const Icon(Icons.description_rounded,
-                    color: AppColors.primary, size: 20),
+                const Icon(
+                  Icons.description_rounded,
+                  color: AppColors.primary,
+                  size: 20,
+                ),
                 const SizedBox(width: 10),
                 const Expanded(
                   child: Text(
@@ -872,21 +892,32 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     padding: EdgeInsets.zero,
                     minimumSize: Size.zero,
                   ),
-                  child: const Text(
-                    'Replace',
-                    style: TextStyle(fontSize: 13),
-                  ),
+                  child: const Text('Replace', style: TextStyle(fontSize: 13)),
                 ),
               ],
             )
-          else
+          else ...[
             const Text(
               'No resume uploaded yet.',
-              style: TextStyle(
-                fontSize: 13,
-                color: AppColors.textSecondary,
+              style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _handleResumeUpload,
+                icon: const Icon(Icons.upload_file_rounded),
+                label: const Text('Upload Resume'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
               ),
             ),
+          ],
         ],
       ),
     );
@@ -935,15 +966,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   child: Text(
                     'Error loading posts: ${snapshot.error}',
-                    style: GoogleFonts.inter(fontSize: 12, color: AppColors.error),
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      color: AppColors.error,
+                    ),
                   ),
                 );
               }
               final docs = snapshot.data?.docs ?? [];
               // Sort by createdAt descending in Dart to avoid needing a composite index
               docs.sort((a, b) {
-                final aTime = (a.data() as Map<String, dynamic>)['createdAt'] as Timestamp?;
-                final bTime = (b.data() as Map<String, dynamic>)['createdAt'] as Timestamp?;
+                final aTime =
+                    (a.data() as Map<String, dynamic>)['createdAt']
+                        as Timestamp?;
+                final bTime =
+                    (b.data() as Map<String, dynamic>)['createdAt']
+                        as Timestamp?;
                 if (aTime == null || bTime == null) return 0;
                 return bTime.compareTo(aTime);
               });
@@ -966,14 +1004,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 physics: const NeverScrollableScrollPhysics(),
                 shrinkWrap: true,
                 itemCount: docs.length,
-                separatorBuilder: (_, __) => const Divider(color: AppColors.outline, height: 1),
+                separatorBuilder: (_, __) =>
+                    const Divider(color: AppColors.outline, height: 1),
                 itemBuilder: (_, i) {
                   final data = docs[i].data() as Map<String, dynamic>;
                   final imageUrls = List<String>.from(data['imageUrls'] ?? []);
                   final caption = (data['caption'] ?? '') as String;
-                  final createdAt = (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now();
+                  final createdAt =
+                      (data['createdAt'] as Timestamp?)?.toDate() ??
+                      DateTime.now();
                   final likeCount = data['likeCount'] ?? 0;
                   final commentCount = data['commentCount'] ?? 0;
+                  final postId = docs[i].id;
+                  final post = PostModel(
+                    postId: postId,
+                    userId: uid,
+                    caption: caption,
+                    imageUrls: imageUrls,
+                    likeCount: likeCount,
+                    commentCount: commentCount,
+                    createdAt: createdAt,
+                  );
 
                   return Padding(
                     padding: const EdgeInsets.symmetric(vertical: 12),
@@ -1001,17 +1052,100 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         const SizedBox(height: 6),
                         Row(
                           children: [
-                            const Icon(Icons.favorite_border, size: 14, color: AppColors.textSecondary),
+                            // Like (static count)
+                            const Icon(
+                              Icons.favorite_border,
+                              size: 14,
+                              color: AppColors.textSecondary,
+                            ),
                             const SizedBox(width: 4),
-                            Text('$likeCount', style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary)),
-                            const SizedBox(width: 12),
-                            const Icon(Icons.chat_bubble_outline, size: 14, color: AppColors.textSecondary),
-                            const SizedBox(width: 4),
-                            Text('$commentCount', style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary)),
+                            Text(
+                              '$likeCount',
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            // Comment – tappable, opens same sheet as What's Up page
+                            _ActionButton(
+                              icon: Icons.chat_bubble_outline_rounded,
+                              label: '$commentCount',
+                              onTap: () => _openComments(context, post),
+                            ),
                             const Spacer(),
                             Text(
                               timeago.format(createdAt),
-                              style: GoogleFonts.inter(fontSize: 11, color: AppColors.textHint),
+                              style: GoogleFonts.inter(
+                                fontSize: 11,
+                                color: AppColors.textHint,
+                              ),
+                            ),
+                            // Delete – same popup as What's Up page
+                            PopupMenuButton<String>(
+                              icon: const Icon(
+                                Icons.more_horiz,
+                                color: AppColors.textSecondary,
+                              ),
+                              onSelected: (value) async {
+                                if (value == 'delete') {
+                                  final confirm = await showDialog<bool>(
+                                    context: context,
+                                    builder: (c) => AlertDialog(
+                                      title: Text(
+                                        'Delete Post',
+                                        style: GoogleFonts.inter(
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                      content: Text(
+                                        'Are you sure you want to delete this post?',
+                                        style: GoogleFonts.inter(),
+                                      ),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () =>
+                                              Navigator.pop(c, false),
+                                          child: const Text('Cancel'),
+                                        ),
+                                        TextButton(
+                                          onPressed: () =>
+                                              Navigator.pop(c, true),
+                                          child: const Text(
+                                            'Delete',
+                                            style: TextStyle(color: Colors.red),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                  if (confirm == true && context.mounted) {
+                                    try {
+                                      await FeedPostService.deletePost(postId);
+                                    } catch (e) {
+                                      if (context.mounted) {
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          SnackBar(
+                                            content: Text('Error: $e'),
+                                            backgroundColor: AppColors.error,
+                                          ),
+                                        );
+                                      }
+                                    }
+                                  }
+                                }
+                              },
+                              itemBuilder: (context) => [
+                                const PopupMenuItem(
+                                  value: 'delete',
+                                  child: Text(
+                                    'Delete Post',
+                                    style: TextStyle(color: Colors.red),
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ),
@@ -1048,6 +1182,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
       return const SizedBox.shrink();
     }
   }
+
+  /// Opens the same comments sheet used on the What's Up page.
+  void _openComments(BuildContext context, PostModel post) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _CommentsSheet(post: post),
+    );
+  }
 }
 
 // ─── Loading Dialog ──────────────────────────────────────────────────────────
@@ -1077,6 +1221,302 @@ class _LoadingDialog extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+// ─── Reusable action button (same as What's Up page) ─────────────────────────
+class _ActionButton extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String label;
+  final VoidCallback onTap;
+
+  const _ActionButton({
+    required this.icon,
+    this.iconColor = AppColors.textSecondary,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: iconColor),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                color: AppColors.textSecondary,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Comments Bottom Sheet (identical to What's Up page) ─────────────────────
+class _CommentsSheet extends StatefulWidget {
+  final PostModel post;
+  const _CommentsSheet({required this.post});
+
+  @override
+  State<_CommentsSheet> createState() => _CommentsSheetState();
+}
+
+class _CommentsSheetState extends State<_CommentsSheet> {
+  final TextEditingController _commentController = TextEditingController();
+  bool _isSubmitting = false;
+
+  @override
+  void dispose() {
+    _commentController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submitComment() async {
+    if (_commentController.text.trim().isEmpty) return;
+    setState(() => _isSubmitting = true);
+    try {
+      await FeedCommentService.addComment(
+        postId: widget.post.postId,
+        commentText: _commentController.text.trim(),
+      );
+      _commentController.clear();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      initialChildSize: 0.65,
+      minChildSize: 0.4,
+      maxChildSize: 0.92,
+      builder: (_, scrollController) {
+        return Container(
+          decoration: const BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            children: [
+              // Handle
+              Container(
+                margin: const EdgeInsets.symmetric(vertical: 10),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.outline,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  children: [
+                    Text(
+                      'Comments',
+                      style: GoogleFonts.inter(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      '${widget.post.commentCount}',
+                      style: GoogleFonts.inter(
+                        fontSize: 14,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(color: AppColors.outline, height: 16),
+              Expanded(
+                child: StreamBuilder<List<CommentModel>>(
+                  stream: FeedCommentService.listenComments(widget.post.postId),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(
+                        child: CircularProgressIndicator(
+                          color: AppColors.primary,
+                        ),
+                      );
+                    }
+                    final comments = snapshot.data ?? [];
+                    if (comments.isEmpty) {
+                      return Center(
+                        child: Text(
+                          'No comments yet. Be the first!',
+                          style: GoogleFonts.inter(
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      );
+                    }
+                    return ListView.separated(
+                      controller: scrollController,
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      itemCount: comments.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 12),
+                      itemBuilder: (_, i) => _CommentTile(comment: comments[i]),
+                    );
+                  },
+                ),
+              ),
+              const Divider(color: AppColors.outline, height: 1),
+              // Comment input
+              Padding(
+                padding: EdgeInsets.only(
+                  left: 12,
+                  right: 12,
+                  top: 10,
+                  bottom: MediaQuery.of(context).viewInsets.bottom + 12,
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _commentController,
+                        decoration: InputDecoration(
+                          hintText: 'Add a comment...',
+                          hintStyle: GoogleFonts.inter(
+                            fontSize: 13,
+                            color: AppColors.textHint,
+                          ),
+                          filled: true,
+                          fillColor: AppColors.background,
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 10,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(24),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    GestureDetector(
+                      onTap: _isSubmitting ? null : _submitComment,
+                      child: Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: const BoxDecoration(
+                          color: AppColors.primary,
+                          shape: BoxShape.circle,
+                        ),
+                        child: _isSubmitting
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(
+                                Icons.send_rounded,
+                                color: Colors.white,
+                                size: 18,
+                              ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _CommentTile extends StatelessWidget {
+  final CommentModel comment;
+  const _CommentTile({required this.comment});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        CircleAvatar(
+          radius: 16,
+          backgroundColor: AppColors.accentLight,
+          backgroundImage: comment.commenterPhotoUrl.isNotEmpty
+              ? NetworkImage(comment.commenterPhotoUrl)
+              : null,
+          child: comment.commenterPhotoUrl.isEmpty
+              ? Text(
+                  comment.commenterName.isNotEmpty
+                      ? comment.commenterName[0].toUpperCase()
+                      : '?',
+                  style: GoogleFonts.inter(
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
+                )
+              : null,
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                comment.commenterName,
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                comment.commentText,
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  color: AppColors.textPrimary,
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                timeago.format(comment.createdAt),
+                style: GoogleFonts.inter(
+                  fontSize: 11,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

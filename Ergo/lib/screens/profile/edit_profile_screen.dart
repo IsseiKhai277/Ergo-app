@@ -15,6 +15,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   final _nameController = TextEditingController();
   final _phoneController = TextEditingController();
   final _bioController = TextEditingController();
+  final _locationController = TextEditingController();
 
   bool _initialized = false;
 
@@ -27,6 +28,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         _nameController.text = profile.fullName;
         _phoneController.text = profile.phoneNumber;
         _bioController.text = profile.bio;
+        _locationController.text = profile.location;
       }
       _initialized = true;
     }
@@ -37,6 +39,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     _nameController.dispose();
     _phoneController.dispose();
     _bioController.dispose();
+    _locationController.dispose();
     super.dispose();
   }
 
@@ -48,6 +51,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       fullName: _nameController.text,
       phoneNumber: _phoneController.text,
       bio: _bioController.text,
+      location: _locationController.text,
     );
 
     if (!mounted) return;
@@ -216,6 +220,20 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   }
                   return null;
                 },
+              ),
+              const SizedBox(height: 18),
+
+              // ── Location ────────────────────────────────────────────────
+              _buildLabel('Location'),
+              const SizedBox(height: 6),
+              TextFormField(
+                controller: _locationController,
+                textCapitalization: TextCapitalization.words,
+                decoration: const InputDecoration(
+                  hintText: 'e.g. Kuala Lumpur, Selangor',
+                  prefixIcon: Icon(Icons.location_on_outlined,
+                      color: AppColors.textHint, size: 20),
+                ),
               ),
               const SizedBox(height: 18),
 

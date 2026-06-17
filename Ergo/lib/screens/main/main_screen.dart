@@ -3,7 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../theme/app_theme.dart';
 import '../../providers/active_job_provider.dart';
-import '../home/home_screen.dart';
+import '../search/search_screen.dart';
 import '../feed/ergo_feed_screen.dart';
 import '../messages/messages_screen.dart';
 import '../profile/profile_screen.dart';
@@ -12,6 +12,7 @@ import '../../services/job_service.dart';
 import '../../models/job_post.dart';
 import '../jobs/active_job_screen.dart';
 import '../jobs/worker_tracking_screen.dart';
+import '../../services/chat_service.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -26,7 +27,7 @@ class _MainScreenState extends State<MainScreen> {
   // The pages for each bottom navigation tab.
   final List<Widget> _pages = [
     const MyJobsScreen(),       // 0: My Jobs (ProLink style)
-    const HomeScreen(),         // 1: Search / Bulletin Board
+    const SearchScreen(),        // 1: Search Users
     const ErgoFeedScreen(),     // 2: What's Up / Ergo Feed
     const MessagesScreen(),     // 3: Messages
     const ProfileScreen(),      // 4: Profile
@@ -119,24 +120,44 @@ class _MainScreenState extends State<MainScreen> {
           selectedItemColor: AppColors.primary,
           unselectedItemColor: AppColors.textSecondary,
           showUnselectedLabels: true,
-          items: const [
-            BottomNavigationBarItem(
+          items: [
+            const BottomNavigationBarItem(
               icon: Icon(Icons.work_outline_rounded),
               label: 'My Jobs',
             ),
-            BottomNavigationBarItem(
+            const BottomNavigationBarItem(
               icon: Icon(Icons.search_rounded),
               label: 'Search',
             ),
-            BottomNavigationBarItem(
+            const BottomNavigationBarItem(
               icon: Icon(Icons.whatshot_rounded),
               label: "What's Up",
             ),
             BottomNavigationBarItem(
-              icon: Icon(Icons.message_rounded),
+              icon: StreamBuilder<int>(
+                stream: ChatService.streamUnreadConversationsCount(),
+                builder: (context, snapshot) {
+                  final count = snapshot.data ?? 0;
+                  if (count > 0) {
+                    return Badge(
+                      label: Text(
+                        count.toString(),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      backgroundColor: Colors.red,
+                      child: const Icon(Icons.message_rounded),
+                    );
+                  }
+                  return const Icon(Icons.message_rounded);
+                },
+              ),
               label: 'Messages',
             ),
-            BottomNavigationBarItem(
+            const BottomNavigationBarItem(
               icon: Icon(Icons.person_outline_rounded),
               label: 'Profile',
             ),

@@ -12,6 +12,8 @@ import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:latlong2/latlong.dart';
 import '../jobs/location_picker_screen.dart';
+import 'package:url_launcher/url_launcher.dart';
+
 class UserProfileScreen extends StatefulWidget {
   final String userId;
 
@@ -47,6 +49,9 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
         final phone = data['phoneNumber'] ?? '';
         final isVerified = data['isVerified'] ?? false;
         final completion = (data['completionPercentage'] ?? 0) as int;
+        final location = data['location'] as String? ?? '';
+        final showLocation = data['showLocation'] as bool? ?? false;
+        final resumeUrl = data['resumeUrl'] as String? ?? '';
 
         return Scaffold(
           backgroundColor: AppColors.background,
@@ -69,6 +74,8 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                     role: role,
                     isVerified: isVerified,
                     completion: completion,
+                    location: location,
+                    showLocation: showLocation,
                   ),
                 ),
               ),
@@ -112,6 +119,12 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                         const SizedBox(height: 16),
                       ],
 
+                      // Resume
+                      if (resumeUrl.isNotEmpty) ...[
+                        _buildResumeCard(resumeUrl),
+                        const SizedBox(height: 16),
+                      ],
+
                       // Contact
                       _buildContactCard(email, phone),
                       const SizedBox(height: 16),
@@ -141,6 +154,8 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     required String role,
     required bool isVerified,
     required int completion,
+    required String location,
+    required bool showLocation,
   }) {
     return Container(
       decoration: const BoxDecoration(
@@ -198,6 +213,30 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                    if (showLocation && location.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.location_on_outlined,
+                            size: 13,
+                            color: Colors.white70,
+                          ),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              location,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.white.withOpacity(0.8),
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                     const SizedBox(height: 8),
@@ -347,6 +386,78 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                 ),
               );
             }).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ─── Resume Card ───────────────────────────────────────────────────────────
+  Widget _buildResumeCard(String resumeUrl) {
+    return _card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Resume',
+            style: GoogleFonts.inter(
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              const Icon(Icons.description_rounded, color: AppColors.primary, size: 22),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Resume Document',
+                      style: GoogleFonts.inter(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    Text(
+                      'PDF Document',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              ElevatedButton.icon(
+                onPressed: () async {
+                  final url = Uri.parse(resumeUrl);
+                  if (await canLaunchUrl(url)) {
+                    await launchUrl(url, mode: LaunchMode.externalApplication);
+                  } else {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Could not open resume')),
+                      );
+                    }
+                  }
+                },
+                icon: const Icon(Icons.download_rounded, size: 16, color: Colors.white),
+                label: const Text('Download/View', style: TextStyle(color: Colors.white)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  minimumSize: Size.zero,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),

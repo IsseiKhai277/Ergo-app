@@ -108,6 +108,7 @@ class FeedPostService {
           posterPhotoUrl: userData?['photoUrl'] ?? '',
           posterRole: userData?['role'] ?? '',
           posterRating: (userData?['rating'] ?? 0.0).toDouble(),
+          posterResumeUrl: userData?['resumeUrl'] as String? ?? '',
           isLikedByCurrentUser: isLiked,
         ));
       }
@@ -130,6 +131,7 @@ class FeedPostService {
       posterPhotoUrl: userData?['photoUrl'] ?? '',
       posterRole: userData?['role'] ?? '',
       posterRating: (userData?['rating'] ?? 0.0).toDouble(),
+      posterResumeUrl: userData?['resumeUrl'] as String? ?? '',
     );
   }
 

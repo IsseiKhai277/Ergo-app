@@ -49,6 +49,7 @@ dependencies:
   latlong2: ^0.9.1
   http: ^1.2.0
   flutter_polyline_points: ^2.1.0
+  url_launcher: ^6.3.2
 
 dev_dependencies:
   flutter_test:
