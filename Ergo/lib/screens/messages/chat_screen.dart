@@ -324,8 +324,19 @@ class _MessageBubbleState extends State<_MessageBubble> {
           jobOffer: widget.message.jobOffer,
         );
       }
-    } catch (_) {
-      if (mounted) setState(() => _isUpdating = false);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isUpdating = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to ${status == 'accepted' ? 'accept' : 'reject'} offer: $e'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            margin: const EdgeInsets.all(16),
+          ),
+        );
+      }
     }
   }
 

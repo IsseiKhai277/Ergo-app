@@ -22,9 +22,6 @@ class ErgoFeedScreen extends StatefulWidget {
 }
 
 class _ErgoFeedScreenState extends State<ErgoFeedScreen> {
-  final TextEditingController _captionController = TextEditingController();
-  final List<File> _selectedImages = [];
-  bool _isPosting = false;
   String _selectedCategory = 'All Posts';
 
   final List<String> _categories = [
@@ -35,48 +32,6 @@ class _ErgoFeedScreenState extends State<ErgoFeedScreen> {
     'Plumber',
     'Carpenter',
   ];
-
-  @override
-  void dispose() {
-    _captionController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _pickImages() async {
-    final picker = ImagePicker();
-    final picked = await picker.pickMultiImage(imageQuality: 85);
-    if (picked.isNotEmpty) {
-      setState(() {
-        _selectedImages.addAll(picked.map((x) => File(x.path)));
-      });
-    }
-  }
-
-  Future<void> _submitPost() async {
-    if (_captionController.text.trim().isEmpty && _selectedImages.isEmpty) {
-      return;
-    }
-    setState(() => _isPosting = true);
-    try {
-      await FeedPostService.createPost(
-        caption: _captionController.text.trim(),
-        imageFiles: _selectedImages,
-      );
-      _captionController.clear();
-      setState(() => _selectedImages.clear());
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to post: $e'),
-            backgroundColor: AppColors.error,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isPosting = false);
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -93,7 +48,6 @@ class _ErgoFeedScreenState extends State<ErgoFeedScreen> {
               builder: (context, snapshot) {
                 return CustomScrollView(
                   slivers: [
-                    SliverToBoxAdapter(child: _buildCreatePostCard()),
                     if (snapshot.connectionState == ConnectionState.waiting)
                       const SliverFillRemaining(
                         child: Center(
@@ -171,6 +125,10 @@ class _ErgoFeedScreenState extends State<ErgoFeedScreen> {
       ),
       actions: [
         IconButton(
+          onPressed: () => _openCreatePostSheet(context),
+          icon: const Icon(Icons.add_circle_outline_rounded, color: AppColors.primary),
+        ),
+        IconButton(
           onPressed: () {},
           icon: const Icon(Icons.notifications_outlined, color: AppColors.textPrimary),
         ),
@@ -197,6 +155,15 @@ class _ErgoFeedScreenState extends State<ErgoFeedScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  void _openCreatePostSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => const _CreatePostSheet(),
     );
   }
 
@@ -277,133 +244,299 @@ class _ErgoFeedScreenState extends State<ErgoFeedScreen> {
     );
   }
 
-  Widget _buildCreatePostCard() {
-    final user = FeedUserResolverService.getCurrentUser();
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.outline),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              CircleAvatar(
-                radius: 18,
-                backgroundColor: AppColors.accentLight,
-                backgroundImage:
-                    user?.photoURL != null && user!.photoURL!.isNotEmpty
-                        ? NetworkImage(user.photoURL!)
-                        : null,
-                child: user?.photoURL == null || user!.photoURL!.isEmpty
-                    ? Text(
-                        user?.displayName?.isNotEmpty == true
-                            ? user!.displayName![0].toUpperCase()
-                            : 'U',
-                        style: GoogleFonts.inter(
-                          color: AppColors.primary,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      )
-                    : null,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: TextField(
-                  controller: _captionController,
-                  maxLines: null,
-                  decoration: InputDecoration(
-                    hintText: 'Share your latest work...',
-                    hintStyle: GoogleFonts.inter(
-                      fontSize: 14,
-                      color: AppColors.textHint,
-                    ),
-                    border: InputBorder.none,
-                    enabledBorder: InputBorder.none,
-                    focusedBorder: InputBorder.none,
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                ),
-              ),
-            ],
+}
+
+// ─── Create Post Bottom Sheet ──────────────────────────────────────────────────
+
+class _CreatePostSheet extends StatefulWidget {
+  const _CreatePostSheet();
+
+  @override
+  State<_CreatePostSheet> createState() => _CreatePostSheetState();
+}
+
+class _CreatePostSheetState extends State<_CreatePostSheet> {
+  final TextEditingController _captionController = TextEditingController();
+  final List<File> _selectedImages = [];
+  bool _isPosting = false;
+
+  @override
+  void dispose() {
+    _captionController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickImages() async {
+    final picker = ImagePicker();
+    final picked = await picker.pickMultiImage(imageQuality: 85);
+    if (picked.isNotEmpty) {
+      setState(() {
+        _selectedImages.addAll(picked.map((x) => File(x.path)));
+      });
+    }
+  }
+
+  void _removeImage(int index) {
+    setState(() {
+      _selectedImages.removeAt(index);
+    });
+  }
+
+  Future<void> _submitPost() async {
+    if (_captionController.text.trim().isEmpty && _selectedImages.isEmpty) {
+      return;
+    }
+    setState(() => _isPosting = true);
+    try {
+      await FeedPostService.createPost(
+        caption: _captionController.text.trim(),
+        imageFiles: _selectedImages,
+      );
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Post shared successfully!'),
+            backgroundColor: AppColors.primary,
           ),
-          if (_selectedImages.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            SizedBox(
-              height: 70,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: _selectedImages.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 6),
-                itemBuilder: (context, i) => ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: Image.file(
-                    _selectedImages[i],
-                    width: 70,
-                    height: 70,
-                    fit: BoxFit.cover,
-                  ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to post: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isPosting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final user = FeedUserResolverService.getCurrentUser();
+    return DraggableScrollableSheet(
+      initialChildSize: 0.75,
+      minChildSize: 0.5,
+      maxChildSize: 0.95,
+      builder: (_, scrollController) {
+        return Container(
+          decoration: const BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            children: [
+              // Handle
+              Container(
+                margin: const EdgeInsets.symmetric(vertical: 10),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.outline,
+                  borderRadius: BorderRadius.circular(2),
                 ),
               ),
-            ),
-          ],
-          const SizedBox(height: 10),
-          const Divider(color: AppColors.outline, height: 1),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              GestureDetector(
-                onTap: _pickImages,
+              // Header
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.close, color: AppColors.textPrimary),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                    Text(
+                      'Create Post',
+                      style: GoogleFonts.inter(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    FilledButton(
+                      onPressed: _isPosting ? null : _submitPost,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                      ),
+                      child: _isPosting
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : Text(
+                              'Post',
+                              style: GoogleFonts.inter(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                              ),
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(color: AppColors.outline, height: 16),
+              
+              // Input body (scrollable)
+              Expanded(
+                child: ListView(
+                  controller: scrollController,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        CircleAvatar(
+                          radius: 20,
+                          backgroundColor: AppColors.accentLight,
+                          backgroundImage:
+                              user?.photoURL != null && user!.photoURL!.isNotEmpty
+                                  ? NetworkImage(user.photoURL!)
+                                  : null,
+                          child: user?.photoURL == null || user!.photoURL!.isEmpty
+                              ? Text(
+                                  user?.displayName?.isNotEmpty == true
+                                      ? user!.displayName![0].toUpperCase()
+                                      : 'U',
+                                  style: GoogleFonts.inter(
+                                    color: AppColors.primary,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                )
+                              : null,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextField(
+                            controller: _captionController,
+                            maxLines: 8,
+                            style: GoogleFonts.inter(
+                              fontSize: 15,
+                              color: AppColors.textPrimary,
+                            ),
+                            decoration: InputDecoration(
+                              hintText: 'Share your latest work...',
+                              hintStyle: GoogleFonts.inter(
+                                fontSize: 15,
+                                color: AppColors.textHint,
+                              ),
+                              border: InputBorder.none,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    if (_selectedImages.isNotEmpty) ...[
+                      Text(
+                        'Selected Photos (${_selectedImages.length})',
+                        style: GoogleFonts.inter(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        height: 90,
+                        child: ListView.separated(
+                          scrollDirection: Axis.horizontal,
+                          itemCount: _selectedImages.length,
+                          separatorBuilder: (_, __) => const SizedBox(width: 8),
+                          itemBuilder: (context, i) {
+                            return Stack(
+                              children: [
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Image.file(
+                                    _selectedImages[i],
+                                    width: 90,
+                                    height: 90,
+                                    fit: BoxFit.cover,
+                                  ),
+                                ),
+                                Positioned(
+                                  top: 4,
+                                  right: 4,
+                                  child: GestureDetector(
+                                    onTap: () => _removeImage(i),
+                                    child: Container(
+                                      decoration: const BoxDecoration(
+                                        color: Colors.black54,
+                                        shape: BoxShape.circle,
+                                      ),
+                                      padding: const EdgeInsets.all(4),
+                                      child: const Icon(
+                                        Icons.close,
+                                        size: 14,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              
+              // Bottom action bar (fixed above keyboard)
+              Padding(
+                padding: EdgeInsets.only(
+                  left: 16,
+                  right: 16,
+                  top: 10,
+                  bottom: MediaQuery.of(context).viewInsets.bottom + 12,
+                ),
                 child: Row(
                   children: [
-                    const Icon(Icons.image_outlined, size: 18, color: AppColors.primary),
-                    const SizedBox(width: 4),
-                    Text(
-                      'Add Photo',
-                      style: GoogleFonts.inter(
-                        fontSize: 13,
-                        color: AppColors.primary,
-                        fontWeight: FontWeight.w500,
+                    GestureDetector(
+                      onTap: _pickImages,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.image_outlined, size: 18, color: AppColors.primary),
+                            const SizedBox(width: 6),
+                            Text(
+                              'Add Photo',
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                color: AppColors.primary,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ],
                 ),
               ),
-              const Spacer(),
-              FilledButton(
-                onPressed: _isPosting ? null : _submitPost,
-                style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                ),
-                child: _isPosting
-                    ? const SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(
-                          color: Colors.white,
-                          strokeWidth: 2,
-                        ),
-                      )
-                    : Text(
-                        'Post',
-                        style: GoogleFonts.inter(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 13,
-                        ),
-                      ),
-              ),
             ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }

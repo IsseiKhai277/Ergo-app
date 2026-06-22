@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 
@@ -79,8 +80,9 @@ class LocationService {
         'workerLongitude': pos.longitude,
         'workerLastUpdated': FieldValue.serverTimestamp(),
       });
-    } catch (_) {
-      // Silently ignore position errors during background updates.
+      debugPrint('[LocationService] Successfully updated worker location: (${pos.latitude}, ${pos.longitude})');
+    } catch (e) {
+      debugPrint('[LocationService] Error updating worker location: $e');
     }
   }
 

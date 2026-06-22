@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../theme/app_theme.dart';
 import '../../providers/active_job_provider.dart';
 import '../search/search_screen.dart';
@@ -13,6 +15,11 @@ import '../../models/job_post.dart';
 import '../jobs/active_job_screen.dart';
 import '../jobs/worker_tracking_screen.dart';
 import '../../services/chat_service.dart';
+import '../../services/auth_service.dart';
+import '../../models/conversation_model.dart';
+import '../../widgets/in_app_notification_banner.dart';
+import '../messages/chat_screen.dart';
+import '../../services/sound_service.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -32,6 +39,226 @@ class _MainScreenState extends State<MainScreen> {
     const MessagesScreen(),     // 3: Messages
     const ProfileScreen(),      // 4: Profile
   ];
+
+  StreamSubscription<List<ConversationModel>>? _convoSub;
+  StreamSubscription<List<JobPost>>? _clientJobsSub;
+  StreamSubscription<List<JobPost>>? _workerJobsSub;
+
+  bool _isFirstConvoEmit = true;
+  bool _isFirstClientJobsEmit = true;
+  bool _isFirstWorkerJobsEmit = true;
+
+  final Map<String, int> _lastUnreadCounts = {};
+  final Map<String, String> _lastClientJobStatuses = {};
+  final Map<String, String> _lastWorkerJobStatuses = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _startListeningNotifications();
+  }
+
+  @override
+  void dispose() {
+    _convoSub?.cancel();
+    _clientJobsSub?.cancel();
+    _workerJobsSub?.cancel();
+    InAppNotificationBanner.dismiss();
+    super.dispose();
+  }
+
+  void _startListeningNotifications() {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null || uid.isEmpty) return;
+
+    // 1. Listen to new messages/conversations
+    _convoSub = ChatService.streamConversations().listen((convos) {
+      if (_isFirstConvoEmit) {
+        for (final c in convos) {
+          _lastUnreadCounts[c.id] = c.unreadCount[uid] ?? 0;
+        }
+        _isFirstConvoEmit = false;
+        return;
+      }
+
+      for (final c in convos) {
+        final prevUnread = _lastUnreadCounts[c.id] ?? 0;
+        final currentUnread = c.unreadCount[uid] ?? 0;
+
+        if (currentUnread > prevUnread && c.lastSenderId != uid) {
+          SoundService.playNotificationSound();
+          final isJobOffer = c.lastMessage.startsWith('Job Offer:');
+          final otherUserId = ChatService.getOtherUserId(c);
+
+          _showInAppNotification(
+            title: isJobOffer ? 'New Job Offer!' : 'New Message',
+            message: c.lastMessage,
+            senderId: otherUserId,
+            onTap: () => _openConversationChat(c),
+          );
+        }
+        _lastUnreadCounts[c.id] = currentUnread;
+      }
+    });
+
+    // 2. Listen to Client status updates (Worker accepts client's job offer)
+    _clientJobsSub = JobService.myPostedJobsStream.listen((jobs) {
+      if (_isFirstClientJobsEmit) {
+        for (final j in jobs) {
+          _lastClientJobStatuses[j.id] = j.status;
+        }
+        _isFirstClientJobsEmit = false;
+        return;
+      }
+
+      for (final j in jobs) {
+        final prevStatus = _lastClientJobStatuses[j.id];
+        final currentStatus = j.status;
+
+        if (prevStatus == 'offered' && currentStatus == 'accepted') {
+          SoundService.playNotificationSound();
+          final workerName = j.workerName.isNotEmpty ? j.workerName : 'A worker';
+
+          if (!mounted) return;
+          InAppNotificationBanner.show(
+            context,
+            title: 'Job Offer Accepted! 🎉',
+            message: '$workerName accepted your offer for "${j.title}"',
+            photoUrl: j.workerPhotoUrl,
+            icon: Icons.check_circle_rounded,
+            color: const Color(0xFF16A34A),
+            onTap: () => _openConversationWithUser(j.workerId),
+          );
+        }
+        _lastClientJobStatuses[j.id] = currentStatus;
+      }
+    });
+
+    // 3. Listen to Worker status updates (Client completes worker's job)
+    _workerJobsSub = JobService.myWorkerJobsStream.listen((jobs) {
+      if (_isFirstWorkerJobsEmit) {
+        for (final j in jobs) {
+          _lastWorkerJobStatuses[j.id] = j.status;
+        }
+        _isFirstWorkerJobsEmit = false;
+        return;
+      }
+
+      for (final j in jobs) {
+        final prevStatus = _lastWorkerJobStatuses[j.id];
+        final currentStatus = j.status;
+
+        if (prevStatus != 'completed' && currentStatus == 'completed') {
+          SoundService.playNotificationSound();
+          final clientName = j.posterName.isNotEmpty ? j.posterName : 'The client';
+
+          if (!mounted) return;
+          InAppNotificationBanner.show(
+            context,
+            title: 'Job Completed! 🏆',
+            message: '$clientName completed & rated your job: "${j.title}"',
+            photoUrl: j.posterPhotoUrl,
+            icon: Icons.emoji_events_rounded,
+            color: const Color(0xFFD97706),
+            onTap: () {
+              setState(() {
+                _currentIndex = 0; // Go to "My Jobs" screen
+              });
+            },
+          );
+        }
+        _lastWorkerJobStatuses[j.id] = currentStatus;
+      }
+    });
+
+  }
+
+  Future<void> _showInAppNotification({
+    required String title,
+    required String message,
+    required String senderId,
+    required VoidCallback onTap,
+  }) async {
+    String? name;
+    String? photoUrl;
+    IconData icon = Icons.message_rounded;
+    Color color = AppColors.primary;
+
+    if (title.contains('Job')) {
+      icon = Icons.work_rounded;
+      color = const Color(0xFF6B4EFF);
+    }
+
+    if (senderId.isNotEmpty) {
+      final profile = await AuthService.getUserProfile(senderId);
+      if (profile != null) {
+        name = profile['fullName'] as String? ?? profile['name'] as String?;
+        photoUrl = profile['photoUrl'] as String? ?? profile['photoURL'] as String?;
+      }
+    }
+
+    if (!mounted) return;
+
+    InAppNotificationBanner.show(
+      context,
+      title: name != null ? '$title from $name' : title,
+      message: message,
+      photoUrl: photoUrl,
+      icon: icon,
+      color: color,
+      onTap: onTap,
+    );
+  }
+
+  void _openConversationChat(ConversationModel convo) {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    
+    final otherUserId = convo.participantIds.firstWhere((id) => id != uid, orElse: () => '');
+    
+    AuthService.getUserProfile(otherUserId).then((profile) {
+      if (!mounted) return;
+      final otherName = profile?['fullName'] as String? ?? 'User';
+      final otherPhoto = profile?['photoUrl'] as String? ?? '';
+      
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ChatScreen(
+            conversationId: convo.id,
+            otherUserId: otherUserId,
+            otherUserName: otherName,
+            otherUserPhotoUrl: otherPhoto,
+            otherUserRole: '',
+          ),
+        ),
+      );
+    });
+  }
+
+  void _openConversationWithUser(String otherUserId) {
+    if (otherUserId.isEmpty) return;
+    ChatService.getOrCreateConversation(otherUserId).then((convId) {
+      AuthService.getUserProfile(otherUserId).then((profile) {
+        if (!mounted) return;
+        final otherName = profile?['fullName'] as String? ?? 'User';
+        final otherPhoto = profile?['photoUrl'] as String? ?? '';
+        
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ChatScreen(
+              conversationId: convId,
+              otherUserId: otherUserId,
+              otherUserName: otherName,
+              otherUserPhotoUrl: otherPhoto,
+              otherUserRole: '',
+            ),
+          ),
+        );
+      });
+    });
+  }
 
   void _onItemTapped(int index) {
     setState(() {

@@ -88,7 +88,122 @@ class _ProfileScreenState extends State<ProfileScreen> {
     });
   }
 
-  // ─── Resume Upload ─────────────────────────────────────────────────────────
+  // ─── AI Detect: Upload resume AND extract skills ───────────────────────────
+  Future<void> _handleAiDetectSkills() async {
+    final provider = context.read<ProfileProvider>();
+
+    // If user already has a resume uploaded, skip re-uploading and just detect
+    final existingResumeUrl = provider.profile?.resumeUrl;
+    if (existingResumeUrl != null && existingResumeUrl.isNotEmpty) {
+      // Show loading indicator
+      if (mounted) {
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => const _LoadingDialog(message: 'Analysing resume with AI...'),
+        );
+      }
+
+      try {
+        final skills = await provider.extractSkillsFromUploadedResume();
+        if (!mounted) return;
+        Navigator.pop(context); // close loading
+
+        if (skills.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                provider.errorMessage ??
+                    'No skills detected. Make sure your resume is a readable PDF/DOCX and your API key is set.',
+              ),
+              backgroundColor: AppColors.error,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              margin: const EdgeInsets.all(16),
+            ),
+          );
+        } else {
+          _showSkillConfirmationModal(skills);
+        }
+      } catch (e) {
+        if (!mounted) return;
+        Navigator.pop(context); // close loading
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('AI detection failed: $e'),
+            backgroundColor: AppColors.error,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            margin: const EdgeInsets.all(16),
+          ),
+        );
+      }
+      return;
+    }
+
+    // No resume yet — pick a file, upload it, then extract skills
+    FilePickerResult? result;
+    try {
+      result = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['pdf', 'docx'],
+        allowMultiple: false,
+      );
+    } catch (_) {
+      return;
+    }
+
+    if (result == null || result.files.isEmpty || !mounted) return;
+    final file = result.files.first;
+    if (file.path == null) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const _LoadingDialog(message: 'Uploading & analysing resume with AI...'),
+    );
+
+    try {
+      final skills = await provider.uploadResumeAndExtractSkills(
+        resumeFile: File(file.path!),
+        fileName: file.name,
+      );
+
+      if (!mounted) return;
+      Navigator.pop(context); // close loading
+
+      if (skills.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              provider.errorMessage ??
+                  'No skills detected. Make sure your resume is a readable PDF/DOCX and your API key is set.',
+            ),
+            backgroundColor: AppColors.error,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            margin: const EdgeInsets.all(16),
+          ),
+        );
+      } else {
+        _showSkillConfirmationModal(skills);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.pop(context); // close loading
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('AI detection failed: $e'),
+          backgroundColor: AppColors.error,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          margin: const EdgeInsets.all(16),
+        ),
+      );
+    }
+  }
+
+  // ─── Plain Resume Upload (Resume section only) ─────────────────────────────
   Future<void> _handleResumeUpload() async {
     FilePickerResult? result;
     try {
@@ -727,7 +842,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
               onPressed: provider.isUploadingResume
                   ? null
-                  : _handleResumeUpload,
+                  : _handleAiDetectSkills,
             ),
           ),
         ],

@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import '../models/conversation_model.dart';
 
 class ChatService {
@@ -190,18 +191,16 @@ class ChatService {
     });
   }
 
-  // ─── Accept a job offer → creates a real doc in /jobs ────────────────────
-  /// Call this instead of (or in addition to) updateJobOfferStatus when the
-  /// recipient taps Accept. It writes a proper JobPost document so the job
-  /// shows up on both parties' My Jobs screens.
+  // ─── Accept a job offer → updates /jobs + marks message accepted ──────────
   static Future<void> acceptJobOffer({
     required String conversationId,
     required String messageId,
     required Map<String, dynamic> jobOffer,
   }) async {
     final uid = _currentUid;
+    debugPrint('[acceptJobOffer] uid=$uid, conversationId=$conversationId, messageId=$messageId');
 
-    // Fetch the accepting user's profile for worker name/photo
+    // Fetch the accepting user's (worker's) profile
     final workerDoc = await _db.collection('users').doc(uid).get();
     final workerName = workerDoc.data()?['fullName'] as String? ?? '';
     final workerPhoto = workerDoc.data()?['photoUrl'] as String? ?? '';
@@ -209,50 +208,99 @@ class ChatService {
     final posterId = jobOffer['senderUid'] as String? ?? '';
     final posterName = jobOffer['senderName'] as String? ?? '';
     final posterPhoto = jobOffer['senderPhoto'] as String? ?? '';
-
     final scheduledTs = jobOffer['scheduledAt'];
-    final scheduledAt =
-        scheduledTs is Timestamp ? scheduledTs.toDate() : null;
-
+    final scheduledAt = scheduledTs is Timestamp ? scheduledTs.toDate() : null;
     final jobId = jobOffer['jobId'] as String? ?? '';
+
+    debugPrint('[acceptJobOffer] jobId=$jobId, posterId=$posterId, workerUid=$uid');
+
+    // Step 1: Update or create the /jobs document
     if (jobId.isNotEmpty) {
-      // Update the existing Offered job document in /jobs to Accepted
-      await _db.collection('jobs').doc(jobId).update({
-        'workerName': workerName,
-        'workerPhotoUrl': workerPhoto,
-        'status': 'accepted',
-      });
+      try {
+        await _db.collection('jobs').doc(jobId).update({
+          'workerName': workerName,
+          'workerPhotoUrl': workerPhoto,
+          'workerId': uid,
+          'status': 'accepted',
+        });
+        debugPrint('[acceptJobOffer] ✅ Step 1 passed: jobs update');
+      } catch (e) {
+        debugPrint('[acceptJobOffer] ❌ Step 1 FAILED: jobs update → $e');
+        throw Exception('Permission denied: cannot update /jobs/$jobId → $e');
+      }
     } else {
-      // Fallback for legacy offers that do not have a jobId field
-      await _db.collection('jobs').add({
-        'posterId': posterId,
-        'posterName': posterName,
-        'posterPhotoUrl': posterPhoto,
-        'workerId': uid,
-        'workerName': workerName,
-        'workerPhotoUrl': workerPhoto,
-        'title': jobOffer['title'] ?? '',
-        'description': jobOffer['description'] ?? '',
-        'price': (jobOffer['price'] ?? 0.0).toDouble(),
-        'location': jobOffer['location'] ?? '',
-        'status': 'accepted',
-        'createdAt': FieldValue.serverTimestamp(),
-        if (scheduledAt != null)
-          'scheduledAt': Timestamp.fromDate(scheduledAt),
-        if (jobOffer['jobLatitude'] != null)
-          'jobLatitude': (jobOffer['jobLatitude'] as num).toDouble(),
-        if (jobOffer['jobLongitude'] != null)
-          'jobLongitude': (jobOffer['jobLongitude'] as num).toDouble(),
-      });
+      // Fallback: create a fresh job doc when offer has no jobId
+      try {
+        final newJobRef = _db.collection('jobs').doc();
+        await newJobRef.set({
+          'posterId': posterId,
+          'posterName': posterName,
+          'posterPhotoUrl': posterPhoto,
+          'workerId': uid,
+          'workerName': workerName,
+          'workerPhotoUrl': workerPhoto,
+          'title': jobOffer['title'] ?? '',
+          'description': jobOffer['description'] ?? '',
+          'price': (jobOffer['price'] ?? 0.0).toDouble(),
+          'location': jobOffer['location'] ?? '',
+          'status': 'accepted',
+          'createdAt': FieldValue.serverTimestamp(),
+          if (scheduledAt != null) 'scheduledAt': Timestamp.fromDate(scheduledAt),
+          if (jobOffer['jobLatitude'] != null)
+            'jobLatitude': (jobOffer['jobLatitude'] as num).toDouble(),
+          if (jobOffer['jobLongitude'] != null)
+            'jobLongitude': (jobOffer['jobLongitude'] as num).toDouble(),
+        });
+        debugPrint('[acceptJobOffer] ✅ Step 1 passed: jobs create');
+      } catch (e) {
+        debugPrint('[acceptJobOffer] ❌ Step 1 FAILED: jobs create → $e');
+        throw Exception('Permission denied: cannot create new /jobs document → $e');
+      }
     }
 
-    // 2. Mark the message as accepted
-    await updateJobOfferStatus(
-      conversationId: conversationId,
-      messageId: messageId,
-      status: 'accepted',
-      jobOffer: jobOffer,
-    );
+    // Step 2: Mark the message as accepted
+    try {
+      await _db
+          .collection('conversations')
+          .doc(conversationId)
+          .collection('messages')
+          .doc(messageId)
+          .update({'jobOffer.status': 'accepted'});
+      debugPrint('[acceptJobOffer] ✅ Step 2 passed: message status update');
+    } catch (e) {
+      debugPrint('[acceptJobOffer] ❌ Step 2 FAILED: message update → $e');
+      throw Exception(
+          'Permission denied: cannot update message in /conversations/$conversationId/messages/$messageId → $e');
+    }
+  }
+
+  // ─── Update job offer status (reject only) ────────────────────────────────
+  static Future<void> updateJobOfferStatus({
+    required String conversationId,
+    required String messageId,
+    required String status,
+    Map<String, dynamic>? jobOffer,
+  }) async {
+    final batch = _db.batch();
+
+    // Update the message status
+    final msgRef = _db
+        .collection('conversations')
+        .doc(conversationId)
+        .collection('messages')
+        .doc(messageId);
+    batch.update(msgRef, {'jobOffer.status': status});
+
+    // Also update the linked job document if it exists
+    if (jobOffer != null) {
+      final jobId = jobOffer['jobId'] as String? ?? '';
+      if (jobId.isNotEmpty) {
+        final jobRef = _db.collection('jobs').doc(jobId);
+        batch.update(jobRef, {'status': status});
+      }
+    }
+
+    await batch.commit();
   }
 
   // ─── Mark conversation as read for current user ───────────────────────────
@@ -262,29 +310,8 @@ class ChatService {
     });
   }
 
-  // ─── Update job offer status (accept / reject) ────────────────────────────
-  static Future<void> updateJobOfferStatus({
-    required String conversationId,
-    required String messageId,
-    required String status, // 'accepted' | 'rejected'
-    Map<String, dynamic>? jobOffer,
-  }) async {
-    await _db
-        .collection('conversations')
-        .doc(conversationId)
-        .collection('messages')
-        .doc(messageId)
-        .update({'jobOffer.status': status});
 
-    if (jobOffer != null) {
-      final jobId = jobOffer['jobId'] as String? ?? '';
-      if (jobId.isNotEmpty) {
-        await _db.collection('jobs').doc(jobId).update({
-          'status': status,
-        });
-      }
-    }
-  }
+
 
   // ─── Get other participant's ID from a conversation ───────────────────────
   static String getOtherUserId(ConversationModel convo) {

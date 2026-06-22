@@ -1,13 +1,15 @@
 import 'dart:io';
-import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import '../models/post_model.dart';
 import 'feed_user_resolver_service.dart';
 
 class FeedPostService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   static final FirebaseAuth _auth = FirebaseAuth.instance;
+  static final FirebaseStorage _storage = FirebaseStorage.instance;
 
   static const int _pageSize = 15;
 
@@ -26,11 +28,21 @@ class FeedPostService {
     final docRef = _firestore.collection('posts').doc();
     final postId = docRef.id;
 
-    // Convert images to Base64 strings to store directly in Firestore
+    // Upload images to Firebase Storage
     final List<String> imageUrls = [];
-    for (final file in imageFiles) {
-      final bytes = await file.readAsBytes();
-      imageUrls.add(base64Encode(bytes));
+    for (int i = 0; i < imageFiles.length; i++) {
+      try {
+        final file = imageFiles[i];
+        final fileName = '${DateTime.now().millisecondsSinceEpoch}_$i.jpg';
+        final storageRef = _storage.ref().child('posts').child(postId).child(fileName);
+        
+        final uploadTask = await storageRef.putFile(file);
+        final downloadUrl = await uploadTask.ref.getDownloadURL();
+        imageUrls.add(downloadUrl);
+      } catch (e) {
+        debugPrint('[FeedPostService] Failed to upload image $i: $e');
+        rethrow;
+      }
     }
 
     // Save post document
@@ -55,6 +67,17 @@ class FeedPostService {
 
     final doc = await _firestore.collection('posts').doc(postId).get();
     if (doc.exists && doc.data()?['userId'] == user.uid) {
+      // 1. Delete associated images from Firebase Storage
+      try {
+        final listResult = await _storage.ref().child('posts').child(postId).listAll();
+        for (final item in listResult.items) {
+          await item.delete();
+        }
+      } catch (e) {
+        debugPrint('[FeedPostService] Error deleting images from Storage: $e');
+      }
+
+      // 2. Delete the post document
       await doc.reference.delete();
     } else {
       throw Exception('Unauthorized to delete this post');

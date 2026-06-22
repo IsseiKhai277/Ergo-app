@@ -144,6 +144,24 @@ class JobService {
         'comment': comment,
         'createdAt': FieldValue.serverTimestamp(),
       });
+
+      // 3. Recalculate average rating and update worker profile
+      final reviewsSnap = await _firestore
+          .collection('reviews')
+          .where('userId', isEqualTo: workerId)
+          .get();
+
+      final totalRating = reviewsSnap.docs.fold<double>(
+        0.0,
+        (acc, doc) => acc + ((doc.data()['rating'] as num?)?.toDouble() ?? 0.0),
+      );
+      final averageRating = reviewsSnap.docs.isEmpty ? 0.0 : totalRating / reviewsSnap.docs.length;
+
+      await _firestore.collection('users').doc(workerId).update({
+        'rating': averageRating,
+        'reviewCount': reviewsSnap.docs.length,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
     }
   }
 

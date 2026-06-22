@@ -123,12 +123,21 @@ class ProfileService {
     return _db
         .collection('reviews')
         .where('userId', isEqualTo: uid)
-        .orderBy('createdAt', descending: true)
         .snapshots()
         .map((snapshot) {
-      return snapshot.docs
+      final list = snapshot.docs
           .map((doc) => Review.fromMap(doc.data(), doc.id))
           .toList();
+      // Sort by createdAt descending locally to avoid requiring a composite index
+      list.sort((a, b) {
+        final aTime = a.createdAt;
+        final bTime = b.createdAt;
+        if (aTime == null && bTime == null) return 0;
+        if (aTime == null) return 1;
+        if (bTime == null) return -1;
+        return bTime.compareTo(aTime);
+      });
+      return list;
     });
   }
 
