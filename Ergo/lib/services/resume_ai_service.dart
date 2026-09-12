@@ -4,13 +4,13 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 import 'package:syncfusion_flutter_pdf/pdf.dart';
 
-/// Service for AI-powered resume skill extraction using Groq API (LLaMA 3).
+/// Service for AI-powered resume skill extraction using Groq API (openai/gpt-oss-120b).
 ///
 /// HOW IT WORKS:
 /// 1. Reads the Groq API key from the .env file (never hardcoded).
 /// 2. Downloads the resume PDF bytes from its Firebase Storage URL.
 /// 3. Extracts plain text from the PDF locally using syncfusion_flutter_pdf.
-/// 4. Sends the extracted text to LLaMA-3 via Groq's free API.
+/// 4. Sends the extracted text to openai/gpt-oss-120b via Groq's free API.
 /// 5. Parses and returns the list of skills.
 ///
 /// ── SETUP ────────────────────────────────────────────────────────────────────
@@ -24,8 +24,8 @@ class ResumeAIService {
   static const String _groqEndpoint =
       'https://api.groq.com/openai/v1/chat/completions';
 
-  // LLaMA 3.1 8B — fast, free, excellent at structured data extraction
-  static const String _groqModel = 'llama-3.1-8b-instant';
+  // openai/gpt-oss-120b — best for structured data extraction
+  static const String _groqModel = 'openai/gpt-oss-120b';
 
   /// Reads the Groq API key from the .env file.
   static String get _apiKey {
@@ -44,9 +44,7 @@ class ResumeAIService {
   /// Extracts skills from a resume at [resumeUrl] (Firebase Storage URL).
   ///
   /// Returns a deduplicated list of skill strings, or throws on failure.
-  static Future<List<String>> extractSkills({
-    required String resumeUrl,
-  }) async {
+  static Future<List<String>> extractSkills({required String resumeUrl}) async {
     final apiKey = _apiKey;
 
     // 1. Download the resume bytes from Firebase Storage
@@ -64,7 +62,9 @@ class ResumeAIService {
       );
     }
 
-    debugPrint('[ResumeAIService] Extracted ${resumeText.length} chars from PDF.');
+    debugPrint(
+      '[ResumeAIService] Extracted ${resumeText.length} chars from PDF.',
+    );
 
     // 3. Truncate to ~3000 chars to stay within token limits
     final truncatedText = resumeText.length > 3000
@@ -111,8 +111,7 @@ class ResumeAIService {
 
     // 5. Parse the response
     final decoded = jsonDecode(response.body);
-    final generatedText =
-        decoded['choices']?[0]?['message']?['content'] ?? '';
+    final generatedText = decoded['choices']?[0]?['message']?['content'] ?? '';
 
     debugPrint('[ResumeAIService] Generated: $generatedText');
 
@@ -152,10 +151,7 @@ class ResumeAIService {
 
   /// Extracts a JSON array of strings from the model's response text.
   static List<String> _parseSkills(String text) {
-    final cleaned = text
-        .replaceAll('```json', '')
-        .replaceAll('```', '')
-        .trim();
+    final cleaned = text.replaceAll('```json', '').replaceAll('```', '').trim();
 
     final start = cleaned.indexOf('[');
     final end = cleaned.lastIndexOf(']');

@@ -709,6 +709,7 @@ class _JobDetailsScreenState extends State<JobDetailsScreen> {
                                 scheduledAt: scheduledAt,
                                 jobLatitude: pickedLocation?.latitude,
                                 jobLongitude: pickedLocation?.longitude,
+                                isApplication: true,
                               );
 
                               if (!context.mounted) return;

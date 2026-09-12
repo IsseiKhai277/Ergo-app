@@ -544,6 +544,8 @@ class _MessageBubbleState extends State<_MessageBubble> {
     DateTime? scheduledAt;
     if (scheduledTs is Timestamp) scheduledAt = scheduledTs.toDate();
 
+    final counterCount = (offer['counterCount'] as num?)?.toInt() ?? 0;
+
     String padTwo(int n) => n.toString().padLeft(2, '0');
     String fmtSchedule(DateTime dt) =>
         '${dt.day}/${dt.month}/${dt.year}  ${padTwo(dt.hour)}:${padTwo(dt.minute)}';
@@ -558,13 +560,13 @@ class _MessageBubbleState extends State<_MessageBubble> {
           Row(
             children: [
               Icon(
-                Icons.work_rounded,
+                counterCount > 0 ? Icons.sync_alt_rounded : Icons.work_rounded,
                 color: widget.isMe ? Colors.white : AppColors.primary,
                 size: 18,
               ),
               const SizedBox(width: 8),
               Text(
-                'Job Offer',
+                counterCount > 0 ? 'Counter Offer ($counterCount/3)' : 'Job Offer',
                 style: GoogleFonts.inter(
                   fontWeight: FontWeight.bold,
                   color: widget.isMe ? Colors.white : AppColors.primary,

@@ -120,6 +120,7 @@ class ChatService {
     DateTime? scheduledAt,
     double? jobLatitude,
     double? jobLongitude,
+    bool isApplication = false,
   }) async {
     final uid = _currentUid;
     final convRef = _db.collection('conversations').doc(conversationId);
@@ -129,7 +130,6 @@ class ChatService {
     final senderData = senderDoc.data() ?? {};
     final senderName = senderData['fullName'] as String? ?? '';
     final senderPhoto = senderData['photoUrl'] as String? ?? '';
-    final senderRole = senderData['role'] as String? ?? 'client';
 
     // Fetch receiver's profile to resolve details for job document
     final receiverDoc = await _db.collection('users').doc(otherUserId).get();
@@ -144,7 +144,8 @@ class ChatService {
     String workerName;
     String workerPhotoUrl;
 
-    if (senderRole == 'worker') {
+    if (isApplication) {
+      // User is APPLYING to work for otherUserId (who posted the job)
       posterId = otherUserId;
       posterName = receiverName;
       posterPhotoUrl = receiverPhoto;
@@ -152,6 +153,7 @@ class ChatService {
       workerName = senderName;
       workerPhotoUrl = senderPhoto;
     } else {
+      // User is DIRECTLY OFFERING a job to otherUserId (hiring otherUserId)
       posterId = uid;
       posterName = senderName;
       posterPhotoUrl = senderPhoto;
@@ -172,6 +174,13 @@ class ChatService {
       'description': description,
       'price': price,
       'location': location,
+      'counterCount': 0,
+      'posterId': posterId,
+      'posterName': posterName,
+      'posterPhotoUrl': posterPhotoUrl,
+      'workerId': workerId,
+      'workerName': workerName,
+      'workerPhotoUrl': workerPhotoUrl,
       // Store both parties so we can write a proper jobs doc on accept
       'senderUid': uid,
       'senderName': senderName,
@@ -210,14 +219,15 @@ class ChatService {
       'price': price,
       'location': location,
       'status': 'offered',
+      'counterCount': 0,
       'createdAt': FieldValue.serverTimestamp(),
       'offeredAt': FieldValue.serverTimestamp(),
       'conversationId': conversationId,
       'messageId': messageRef.id,
       if (scheduledAt != null)
         'scheduledAt': Timestamp.fromDate(scheduledAt),
-      if (jobLatitude != null) 'jobLatitude': jobLatitude,
-      if (jobLongitude != null) 'jobLongitude': jobLongitude,
+      ...?jobLatitude == null ? null : {'jobLatitude': jobLatitude},
+      ...?jobLongitude == null ? null : {'jobLongitude': jobLongitude},
     });
 
     // 3. Update conversation metadata
@@ -249,87 +259,85 @@ class ChatService {
     // causes role swaps if two parties negotiate back and forth.
     // Instead, read posterId/workerId from the actual /jobs document, which
     // are set once at job creation and never change.
-    String workerUid;
-    String workerName;
-    String workerPhoto;
-    String clientUid;
-    String clientName;
-    String clientPhoto;
 
-    // Fetch the accepting user's profile to resolve their role & name/photo
+    // Fetch the accepting user's profile to resolve their name/photo
     final acceptorDoc = await _db.collection('users').doc(uid).get();
     final acceptorData = acceptorDoc.data() ?? {};
-    final acceptorRole = acceptorData['role'] as String? ?? 'worker';
     final acceptorName = acceptorData['fullName'] as String? ?? '';
     final acceptorPhotoUrl = acceptorData['photoUrl'] as String? ?? '';
 
+    String docPosterId = '';
+    String docWorkerId = '';
+    String docPosterName = '';
+    String docPosterPhoto = '';
+    String docWorkerName = '';
+    String docWorkerPhoto = '';
+
     if (jobId.isNotEmpty) {
-      // Fetch the job document to get the canonical posterId and workerId
       final jobDoc = await _db.collection('jobs').doc(jobId).get();
       if (jobDoc.exists) {
         final jobData = jobDoc.data()!;
-        final docPosterId = jobData['posterId'] as String? ?? '';
-        final docWorkerId = jobData['workerId'] as String? ?? '';
+        docPosterId = jobData['posterId'] as String? ?? '';
+        docWorkerId = jobData['workerId'] as String? ?? '';
+        docPosterName = jobData['posterName'] as String? ?? '';
+        docPosterPhoto = jobData['posterPhotoUrl'] as String? ?? '';
+        docWorkerName = jobData['workerName'] as String? ?? '';
+        docWorkerPhoto = jobData['workerPhotoUrl'] as String? ?? '';
+      }
+    }
 
-        if (uid == docWorkerId) {
-          // Current user is the worker
-          workerUid = uid;
-          workerName = acceptorName;
-          workerPhoto = acceptorPhotoUrl;
-          clientUid = docPosterId;
-          // Fetch client's display name/photo from DB
-          final clientDoc = await _db.collection('users').doc(clientUid).get();
-          final clientData = clientDoc.data() ?? {};
-          clientName = clientData['fullName'] as String? ?? (jobData['posterName'] as String? ?? '');
-          clientPhoto = clientData['photoUrl'] as String? ?? (jobData['posterPhotoUrl'] as String? ?? '');
-        } else {
-          // Current user is the client (poster)
-          clientUid = uid;
-          clientName = acceptorName;
-          clientPhoto = acceptorPhotoUrl;
-          workerUid = docWorkerId;
-          workerName = jobData['workerName'] as String? ?? '';
-          workerPhoto = jobData['workerPhotoUrl'] as String? ?? '';
-        }
-      } else {
-        // Job doc doesn't exist yet — fall back to role-based heuristic
-        // (This path is for very first acceptance before a job doc is created)
-        if (acceptorRole == 'worker') {
-          workerUid = uid;
-          workerName = acceptorName;
-          workerPhoto = acceptorPhotoUrl;
-          clientUid = jobOffer['senderUid'] as String? ?? '';
-          clientName = jobOffer['senderName'] as String? ?? '';
-          clientPhoto = jobOffer['senderPhoto'] as String? ?? '';
-        } else {
-          clientUid = uid;
-          clientName = acceptorName;
-          clientPhoto = acceptorPhotoUrl;
-          workerUid = jobOffer['senderUid'] as String? ?? '';
-          final workerDoc = await _db.collection('users').doc(workerUid).get();
-          final workerData = workerDoc.data() ?? {};
-          workerName = workerData['fullName'] as String? ?? '';
-          workerPhoto = workerData['photoUrl'] as String? ?? '';
-        }
+    // Fallback to jobOffer map fields if job doc didn't have them
+    if (docPosterId.isEmpty) {
+      docPosterId = jobOffer['posterId'] as String? ?? '';
+      docPosterName = jobOffer['posterName'] as String? ?? '';
+      docPosterPhoto = jobOffer['posterPhotoUrl'] as String? ?? '';
+    }
+    if (docWorkerId.isEmpty) {
+      docWorkerId = jobOffer['workerId'] as String? ?? '';
+      docWorkerName = jobOffer['workerName'] as String? ?? '';
+      docWorkerPhoto = jobOffer['workerPhotoUrl'] as String? ?? '';
+    }
+
+    // Ultimate fallback for legacy cards: infer from conversation
+    if (docPosterId.isEmpty || docWorkerId.isEmpty) {
+      final convDoc = await _db.collection('conversations').doc(conversationId).get();
+      final participantIds = List<String>.from(convDoc.data()?['participantIds'] ?? []);
+      final otherId = participantIds.firstWhere((id) => id != uid, orElse: () => '');
+      
+      final originalOfferSender = jobOffer['senderUid'] as String? ?? '';
+      if (docPosterId.isEmpty) {
+        docPosterId = originalOfferSender.isNotEmpty ? originalOfferSender : uid;
+      }
+      if (docWorkerId.isEmpty) {
+        docWorkerId = docPosterId == uid ? otherId : uid;
+      }
+    }
+
+    // 🔒 Canonical assignment: posterId is ALWAYS Client, workerId is ALWAYS Worker.
+    // They NEVER swap, regardless of who accepted or who sent the last counter-offer.
+    final clientUid = docPosterId;
+    final workerUid = docWorkerId;
+
+    String clientName = docPosterName;
+    String clientPhoto = docPosterPhoto;
+    String workerName = docWorkerName;
+    String workerPhoto = docWorkerPhoto;
+
+    if (uid == clientUid) {
+      clientName = acceptorName.isNotEmpty ? acceptorName : clientName;
+      clientPhoto = acceptorPhotoUrl.isNotEmpty ? acceptorPhotoUrl : clientPhoto;
+      if (workerName.isEmpty && workerUid.isNotEmpty) {
+        final wDoc = await _db.collection('users').doc(workerUid).get();
+        workerName = wDoc.data()?['fullName'] as String? ?? '';
+        workerPhoto = wDoc.data()?['photoUrl'] as String? ?? '';
       }
     } else {
-      // No jobId at all — fall back to role-based heuristic
-      if (acceptorRole == 'worker') {
-        workerUid = uid;
-        workerName = acceptorName;
-        workerPhoto = acceptorPhotoUrl;
-        clientUid = jobOffer['senderUid'] as String? ?? '';
-        clientName = jobOffer['senderName'] as String? ?? '';
-        clientPhoto = jobOffer['senderPhoto'] as String? ?? '';
-      } else {
-        clientUid = uid;
-        clientName = acceptorName;
-        clientPhoto = acceptorPhotoUrl;
-        workerUid = jobOffer['senderUid'] as String? ?? '';
-        final workerDoc = await _db.collection('users').doc(workerUid).get();
-        final workerData = workerDoc.data() ?? {};
-        workerName = workerData['fullName'] as String? ?? '';
-        workerPhoto = workerData['photoUrl'] as String? ?? '';
+      workerName = acceptorName.isNotEmpty ? acceptorName : workerName;
+      workerPhoto = acceptorPhotoUrl.isNotEmpty ? acceptorPhotoUrl : workerPhoto;
+      if (clientName.isEmpty && clientUid.isNotEmpty) {
+        final cDoc = await _db.collection('users').doc(clientUid).get();
+        clientName = cDoc.data()?['fullName'] as String? ?? '';
+        clientPhoto = cDoc.data()?['photoUrl'] as String? ?? '';
       }
     }
 
@@ -398,12 +406,23 @@ class ChatService {
     // Step 1: Update or create the /jobs document
     if (jobId.isNotEmpty) {
       try {
-        await _db.collection('jobs').doc(jobId).update({
+        final updatePayload = <String, dynamic>{
+          'posterId': clientUid,
+          'posterName': clientName,
+          'posterPhotoUrl': clientPhoto,
           'workerId': workerUid,
           'workerName': workerName,
           'workerPhotoUrl': workerPhoto,
           'status': 'accepted',
-        });
+          'acceptedAt': FieldValue.serverTimestamp(),
+        };
+        if (scheduledAt != null) {
+          updatePayload['scheduledAt'] = Timestamp.fromDate(scheduledAt);
+        }
+        if (jobOffer['price'] != null) {
+          updatePayload['price'] = (jobOffer['price'] as num).toDouble();
+        }
+        await _db.collection('jobs').doc(jobId).update(updatePayload);
         debugPrint('[acceptJobOffer] ✅ Step 1 passed: jobs update');
       } catch (e) {
         debugPrint('[acceptJobOffer] ❌ Step 1 FAILED: jobs update → $e');
@@ -562,12 +581,17 @@ class ChatService {
       final newMsgId = newMsgRef.id;
       debugPrint('  Batch 2: creating new message $newMsgId for counter-offer');
 
+      final posterId = originalJobOffer['posterId'] as String? ?? '';
+      final workerId = originalJobOffer['workerId'] as String? ?? '';
+
       final newJobOfferData = <String, dynamic>{
         'jobId': jobId,
         'title': title,
         'description': description,
         'price': counterPrice,
         'location': location,
+        if (posterId.isNotEmpty) 'posterId': posterId,
+        if (workerId.isNotEmpty) 'workerId': workerId,
         'senderUid': uid,
         'senderName': senderName,
         'senderPhoto': senderPhoto,
@@ -661,11 +685,10 @@ class ChatService {
           innerBatch.delete(doc.reference);
         }
         innerBatch.commit().catchError((e) {
-          // Silent catch or debug print
-          print('Error deleting messages for conversation $id: $e');
+          debugPrint('Error deleting messages for conversation $id: $e');
         });
       }).catchError((e) {
-        print('Error fetching messages for conversation $id: $e');
+        debugPrint('Error fetching messages for conversation $id: $e');
       });
     }
   }

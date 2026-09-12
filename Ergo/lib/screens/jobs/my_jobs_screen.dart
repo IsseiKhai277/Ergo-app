@@ -755,11 +755,16 @@ class _JobCardState extends State<_JobCard>
     final job = widget.job;
     final status = job.status.toLowerCase();
     final isCompleted = status == 'completed';
-    final contactName = widget.isClient ? job.workerName : job.posterName;
-    final contactPhoto = widget.isClient
+    final currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final isActualClient = job.posterId == currentUid;
+    final isActualWorker = job.workerId == currentUid;
+    final isClientView = isActualClient || (!isActualWorker && widget.isClient);
+
+    final contactName = isClientView ? job.workerName : job.posterName;
+    final contactPhoto = isClientView
         ? job.workerPhotoUrl
         : job.posterPhotoUrl;
-    final contactLabel = widget.isClient ? 'Worker' : 'Client';
+    final contactLabel = isClientView ? 'Worker' : 'Client';
 
     return GestureDetector(
       onTapDown: (_) => _scaleCtrl.forward(),
@@ -912,7 +917,7 @@ class _JobCardState extends State<_JobCard>
                           onPressed: widget.onMessageTap,
                           icon: const Icon(Icons.message_outlined, size: 15),
                           label: Text(
-                            widget.isClient
+                            isClientView
                                 ? 'Message Worker'
                                 : 'Message Client',
                             style: GoogleFonts.inter(fontSize: 12),
@@ -928,7 +933,7 @@ class _JobCardState extends State<_JobCard>
                           ),
                         ),
                       ),
-                      if (widget.isClient) ...[
+                      if (isClientView) ...[
                         const SizedBox(width: 10),
                         Expanded(
                           child: ElevatedButton.icon(
@@ -976,7 +981,7 @@ class _JobCardState extends State<_JobCard>
                           onPressed: widget.onMessageTap,
                           icon: const Icon(Icons.message_outlined, size: 15),
                           label: Text(
-                            widget.isClient
+                            isClientView
                                 ? 'Message Worker'
                                 : 'Message Client',
                             style: GoogleFonts.inter(fontSize: 12),
@@ -993,7 +998,7 @@ class _JobCardState extends State<_JobCard>
                         ),
                       ),
                       // Start Job button — worker only
-                      if (!widget.isClient) ...[
+                      if (!isClientView) ...[
                         const SizedBox(width: 10),
                         Expanded(
                           child: ElevatedButton.icon(
