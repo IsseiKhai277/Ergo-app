@@ -79,11 +79,14 @@ class _BannerWidget extends StatelessWidget {
         child: TweenAnimationBuilder<double>(
           duration: const Duration(milliseconds: 350),
           curve: Curves.easeOutBack,
-          tween: Tween(begin: -100.0, end: 12.0),
-          builder: (context, topPadding, child) {
-            return Padding(
-              padding: EdgeInsets.only(top: topPadding, left: 16, right: 16),
-              child: child,
+          tween: Tween(begin: -150.0, end: 0.0),
+          builder: (context, translateY, child) {
+            return Transform.translate(
+              offset: Offset(0, translateY),
+              child: Padding(
+                padding: const EdgeInsets.only(top: 12, left: 16, right: 16),
+                child: child,
+              ),
             );
           },
           child: Material(

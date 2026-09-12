@@ -30,10 +30,16 @@ class JobPost {
   final String? conversationId;
   final String? messageId;
 
+  // Offer expiry — set when a client sends a job offer via chat
+  final DateTime? offeredAt;
+
   // Completion data
   final String? completionPhoto;
   final String? completionDescription;
   final double? rating;
+
+  // Counter offer cycle count
+  final int counterCount;
 
   JobPost({
     required this.id,
@@ -56,9 +62,11 @@ class JobPost {
     this.workerLongitude,
     this.conversationId,
     this.messageId,
+    this.offeredAt,
     this.completionPhoto,
     this.completionDescription,
     this.rating,
+    this.counterCount = 0,
   });
 
   factory JobPost.fromMap(Map<String, dynamic> data, String documentId) {
@@ -84,9 +92,11 @@ class JobPost {
       workerLongitude: (data['workerLongitude'] as num?)?.toDouble(),
       conversationId: data['conversationId'] as String?,
       messageId: data['messageId'] as String?,
+      offeredAt: (data['offeredAt'] as Timestamp?)?.toDate(),
       completionPhoto: data['completionPhoto'] as String?,
       completionDescription: data['completionDescription'] as String?,
       rating: (data['rating'] as num?)?.toDouble(),
+      counterCount: (data['counterCount'] as num?)?.toInt() ?? 0,
     );
   }
 
@@ -110,10 +120,12 @@ class JobPost {
       if (jobLongitude != null) 'jobLongitude': jobLongitude,
       if (conversationId != null) 'conversationId': conversationId,
       if (messageId != null) 'messageId': messageId,
+      if (offeredAt != null) 'offeredAt': Timestamp.fromDate(offeredAt!),
       if (completionPhoto != null) 'completionPhoto': completionPhoto,
       if (completionDescription != null)
         'completionDescription': completionDescription,
       if (rating != null) 'rating': rating,
+      'counterCount': counterCount,
     };
   }
 
@@ -138,9 +150,11 @@ class JobPost {
     double? workerLongitude,
     String? conversationId,
     String? messageId,
+    DateTime? offeredAt,
     String? completionPhoto,
     String? completionDescription,
     double? rating,
+    int? counterCount,
   }) {
     return JobPost(
       id: id ?? this.id,
@@ -163,9 +177,11 @@ class JobPost {
       workerLongitude: workerLongitude ?? this.workerLongitude,
       conversationId: conversationId ?? this.conversationId,
       messageId: messageId ?? this.messageId,
+      offeredAt: offeredAt ?? this.offeredAt,
       completionPhoto: completionPhoto ?? this.completionPhoto,
       completionDescription: completionDescription ?? this.completionDescription,
       rating: rating ?? this.rating,
+      counterCount: counterCount ?? this.counterCount,
     );
   }
 }

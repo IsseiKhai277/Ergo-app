@@ -32,6 +32,7 @@ class HomeScreen extends StatelessWidget {
         backgroundColor: AppColors.surface,
         elevation: 0,
         title: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
             Container(
               width: 32,

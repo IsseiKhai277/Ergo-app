@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_rating_bar/flutter_rating_bar.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -8,6 +9,7 @@ import 'package:timeago/timeago.dart' as timeago;
 import '../../theme/app_theme.dart';
 import '../../services/chat_service.dart';
 import '../messages/chat_screen.dart';
+import '../../models/user_profile.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:latlong2/latlong.dart';
@@ -40,16 +42,18 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
         }
 
         final data = userSnap.data?.data() as Map<String, dynamic>? ?? {};
-        final fullName = data['fullName'] ?? data['name'] ?? 'Unknown User';
-        final email = data['email'] ?? '';
-        final photoUrl = data['photoUrl'] ?? data['photoURL'] ?? '';
-        final role = data['role'] ?? '';
-        final skills = List<String>.from(data['skills'] ?? []);
-        final phone = data['phoneNumber'] ?? '';
-        final isVerified = data['verified'] ?? false;
-        final completion = (data['completionPercentage'] ?? 0) as int;
-        final location = data['location'] as String? ?? '';
-        final showLocation = data['showLocation'] as bool? ?? false;
+        final profile = UserProfile.fromMap(data, widget.userId);
+
+        final fullName = profile.fullName.isNotEmpty ? profile.fullName : 'Unknown User';
+        final email = profile.email;
+        final photoUrl = profile.photoUrl;
+        final role = profile.role;
+        final skills = profile.skills;
+        final phone = profile.phoneNumber;
+        final isVerified = profile.isVerified;
+        final completion = profile.completionPercentage;
+        final location = profile.location;
+        final showLocation = profile.showLocation;
 
         return Scaffold(
           backgroundColor: AppColors.background,
@@ -124,8 +128,10 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                       const SizedBox(height: 16),
 
                       // Offer Job Button
-                      _buildOfferJobButton(fullName, photoUrl, role),
-                      const SizedBox(height: 16),
+                      if (FirebaseAuth.instance.currentUser?.uid != widget.userId) ...[
+                        _buildOfferJobButton(fullName, photoUrl, role),
+                        const SizedBox(height: 16),
+                      ],
 
                       // Posts
                       _buildPostsSection(),

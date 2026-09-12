@@ -22,16 +22,18 @@ class ErgoFeedScreen extends StatefulWidget {
 }
 
 class _ErgoFeedScreenState extends State<ErgoFeedScreen> {
-  String _selectedCategory = 'All Posts';
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
 
-  final List<String> _categories = [
-    'All Posts',
-    'Electrician',
-    'Technician',
-    'Mechanic',
-    'Plumber',
-    'Carpenter',
-  ];
+  bool _filterUnverifiedOnly = false;
+  bool _filterWorkerOnly = false;
+  bool _filterLinkedOnly = false;
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -41,44 +43,94 @@ class _ErgoFeedScreenState extends State<ErgoFeedScreen> {
       body: Column(
         children: [
           _buildSearchBar(),
-          _buildCategoryChips(),
           Expanded(
             child: StreamBuilder<List<PostModel>>(
               stream: FeedPostService.fetchPostsStream(),
               builder: (context, snapshot) {
-                return CustomScrollView(
-                  slivers: [
-                    if (snapshot.connectionState == ConnectionState.waiting)
-                      const SliverFillRemaining(
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const CustomScrollView(
+                    slivers: [
+                      SliverFillRemaining(
                         child: Center(
                           child: CircularProgressIndicator(
                             color: AppColors.primary,
                           ),
                         ),
-                      )
-                    else if (snapshot.hasError)
+                      ),
+                    ],
+                  );
+                }
+
+                if (snapshot.hasError) {
+                  return CustomScrollView(
+                    slivers: [
                       SliverFillRemaining(
                         child: Center(
-                          child: Text(
-                            'Error loading feed',
-                            style: GoogleFonts.inter(color: AppColors.error),
+                          child: Padding(
+                            padding: const EdgeInsets.all(16.0),
+                            child: Builder(
+                              builder: (context) {
+                                debugPrint('[FeedScreen] Error loading feed: ${snapshot.error}');
+                                if (snapshot.stackTrace != null) {
+                                  debugPrint('[FeedScreen] Stacktrace: ${snapshot.stackTrace}');
+                                }
+                                return Text(
+                                  'Error loading feed: ${snapshot.error}',
+                                  textAlign: TextAlign.center,
+                                  style: GoogleFonts.inter(color: AppColors.error),
+                                );
+                              }
+                            ),
                           ),
                         ),
-                      )
-                    else if ((snapshot.data ?? []).isEmpty)
+                      ),
+                    ],
+                  );
+                }
+
+                final allPosts = snapshot.data ?? [];
+                final filteredPosts = allPosts.where((post) {
+                  if (_searchQuery.isNotEmpty) {
+                    final captionLower = post.caption.toLowerCase();
+                    final queryLower = _searchQuery.toLowerCase();
+                    if (!captionLower.contains(queryLower)) {
+                      return false;
+                    }
+                  }
+                  if (_filterUnverifiedOnly && post.posterVerified) {
+                    return false;
+                  }
+                  if (_filterWorkerOnly && post.posterRole != 'worker') {
+                    return false;
+                  }
+                  if (_filterLinkedOnly && (post.clientId == null || post.clientId!.isEmpty)) {
+                    return false;
+                  }
+                  return true;
+                }).toList();
+
+                return CustomScrollView(
+                  slivers: [
+                    if (filteredPosts.isEmpty)
                       SliverFillRemaining(
                         child: Center(
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
                               Icon(
-                                Icons.dynamic_feed_outlined,
+                                _searchQuery.isNotEmpty
+                                    ? Icons.search_off_rounded
+                                    : Icons.dynamic_feed_outlined,
                                 size: 64,
                                 color: AppColors.textSecondary.withOpacity(0.5),
                               ),
                               const SizedBox(height: 16),
                               Text(
-                                'No posts yet.\nBe the first to share!',
+                                _searchQuery.isNotEmpty
+                                    ? 'No posts match your search query.'
+                                    : allPosts.isEmpty
+                                        ? 'No posts yet.\nBe the first to share!'
+                                        : 'No posts match the active filters.',
                                 textAlign: TextAlign.center,
                                 style: GoogleFonts.inter(
                                   fontSize: 15,
@@ -94,10 +146,10 @@ class _ErgoFeedScreenState extends State<ErgoFeedScreen> {
                       SliverList(
                         delegate: SliverChildBuilderDelegate(
                           (context, index) {
-                            final post = snapshot.data![index];
+                            final post = filteredPosts[index];
                             return _PostCard(post: post);
                           },
-                          childCount: snapshot.data!.length,
+                          childCount: filteredPosts.length,
                         ),
                       ),
                   ],
@@ -175,8 +227,14 @@ class _ErgoFeedScreenState extends State<ErgoFeedScreen> {
         children: [
           Expanded(
             child: TextField(
+              controller: _searchController,
+              onChanged: (val) {
+                setState(() {
+                  _searchQuery = val.trim();
+                });
+              },
               decoration: InputDecoration(
-                hintText: 'Search trades & projects',
+                hintText: 'Search posts by caption...',
                 hintStyle: GoogleFonts.inter(
                   fontSize: 13,
                   color: AppColors.textHint,
@@ -195,11 +253,16 @@ class _ErgoFeedScreenState extends State<ErgoFeedScreen> {
           const SizedBox(width: 8),
           Container(
             decoration: BoxDecoration(
-              color: AppColors.background,
+              color: (_filterUnverifiedOnly || _filterWorkerOnly || _filterLinkedOnly)
+                  ? AppColors.primary.withValues(alpha: 0.12)
+                  : AppColors.background,
               borderRadius: BorderRadius.circular(10),
+              border: (_filterUnverifiedOnly || _filterWorkerOnly || _filterLinkedOnly)
+                  ? Border.all(color: AppColors.primary.withValues(alpha: 0.5))
+                  : null,
             ),
             child: IconButton(
-              onPressed: () {},
+              onPressed: () => _openFilterSheet(context),
               icon: const Icon(Icons.tune_rounded, color: AppColors.primary, size: 20),
             ),
           ),
@@ -208,42 +271,167 @@ class _ErgoFeedScreenState extends State<ErgoFeedScreen> {
     );
   }
 
-  Widget _buildCategoryChips() {
-    return Container(
-      color: AppColors.surface,
-      height: 44,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        itemCount: _categories.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 8),
-        itemBuilder: (context, index) {
-          final cat = _categories[index];
-          final isSelected = cat == _selectedCategory;
-          return GestureDetector(
-            onTap: () => setState(() => _selectedCategory = cat),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(
-                color: isSelected ? AppColors.primary : AppColors.background,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text(
-                cat,
-                style: GoogleFonts.inter(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: isSelected ? Colors.white : AppColors.textSecondary,
+  void _openFilterSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) {
+          return Container(
+            decoration: const BoxDecoration(
+              color: AppColors.background,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: AppColors.outline,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
                 ),
-              ),
+                const SizedBox(height: 20),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Filter Posts',
+                      style: GoogleFonts.inter(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () {
+                        setSheetState(() {
+                          _filterUnverifiedOnly = false;
+                          _filterWorkerOnly = false;
+                          _filterLinkedOnly = false;
+                        });
+                        setState(() {});
+                      },
+                      child: Text(
+                        'Reset All',
+                        style: GoogleFonts.inter(
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                const Divider(color: AppColors.outline),
+                const SizedBox(height: 10),
+                
+                SwitchListTile(
+                  title: Text(
+                    'Unverified Users Only',
+                    style: GoogleFonts.inter(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  subtitle: Text(
+                    'Only show posts from unverified accounts',
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                  activeColor: AppColors.primary,
+                  value: _filterUnverifiedOnly,
+                  onChanged: (val) {
+                    setSheetState(() => _filterUnverifiedOnly = val);
+                    setState(() {});
+                  },
+                ),
+                
+                SwitchListTile(
+                  title: Text(
+                    'Workers Only',
+                    style: GoogleFonts.inter(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  subtitle: Text(
+                    'Only show posts from service workers',
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                  activeColor: AppColors.primary,
+                  value: _filterWorkerOnly,
+                  onChanged: (val) {
+                    setSheetState(() => _filterWorkerOnly = val);
+                    setState(() {});
+                  },
+                ),
+                
+                SwitchListTile(
+                  title: Text(
+                    'Job Completion Posts Only',
+                    style: GoogleFonts.inter(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  subtitle: Text(
+                    'Only show linked job completion posts',
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                  activeColor: AppColors.primary,
+                  value: _filterLinkedOnly,
+                  onChanged: (val) {
+                    setSheetState(() => _filterLinkedOnly = val);
+                    setState(() {});
+                  },
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    onPressed: () => Navigator.pop(ctx),
+                    child: Text(
+                      'Apply Filters',
+                      style: GoogleFonts.inter(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           );
         },
       ),
     );
   }
-
 }
 
 // ─── Create Post Bottom Sheet ──────────────────────────────────────────────────
@@ -554,12 +742,21 @@ class _PostCard extends StatefulWidget {
 class _PostCardState extends State<_PostCard> {
   late bool _isLiked;
   late int _likeCount;
+  late final PageController _pageController;
+  int _currentPage = 0;
 
   @override
   void initState() {
     super.initState();
     _isLiked = widget.post.isLikedByCurrentUser;
     _likeCount = widget.post.likeCount;
+    _pageController = PageController();
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
   }
 
   Future<void> _toggleLike() async {
@@ -628,83 +825,10 @@ class _PostCardState extends State<_PostCard> {
             padding: const EdgeInsets.fromLTRB(12, 12, 4, 8),
             child: Row(
               children: [
-                GestureDetector(
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => UserProfileScreen(userId: post.userId),
-                    ),
-                  ),
-                  child: CircleAvatar(
-                    radius: 20,
-                    backgroundColor: AppColors.accentLight,
-                    backgroundImage: post.posterPhotoUrl.isNotEmpty
-                        ? NetworkImage(post.posterPhotoUrl)
-                        : null,
-                    child: post.posterPhotoUrl.isEmpty
-                        ? Text(
-                            post.posterName.isNotEmpty
-                                ? post.posterName[0].toUpperCase()
-                                : '?',
-                            style: GoogleFonts.inter(
-                              color: AppColors.primary,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          )
-                        : null,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Text(
-                            post.posterName,
-                            style: GoogleFonts.inter(
-                              fontWeight: FontWeight.w700,
-                              fontSize: 14,
-                              color: AppColors.textPrimary,
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: post.posterResumeUrl.isEmpty
-                                  ? const Color(0xFF64748B)
-                                  : const Color(0xFF10B981),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Text(
-                              post.posterResumeUrl.isEmpty
-                                  ? 'UNVERIFIED'
-                                  : (post.posterRole.isNotEmpty
-                                      ? post.posterRole.toUpperCase()
-                                      : 'WORKER'),
-                              style: GoogleFonts.inter(
-                                fontSize: 9,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.white,
-                                letterSpacing: 0.5,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      Text(
-                        timeago.format(post.createdAt),
-                        style: GoogleFonts.inter(
-                          fontSize: 11,
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                if (post.clientId != null && post.clientId!.isNotEmpty)
+                  _buildDoubleAvatarHeader(context, post)
+                else
+                  _buildSingleAvatarHeader(context, post),
                 if (post.userId == FeedUserResolverService.getCurrentUser()?.uid)
                   PopupMenuButton<String>(
                     icon: const Icon(Icons.more_horiz, color: AppColors.textSecondary),
@@ -753,20 +877,147 @@ class _PostCardState extends State<_PostCard> {
           if (post.imageUrls.isNotEmpty)
             ClipRRect(
               child: post.imageUrls.length == 1
-                  ? _buildImage(
-                      post.imageUrls.first,
-                      width: double.infinity,
-                      // Omitting height allows image to display in its natural aspect ratio
+                  ? GestureDetector(
+                      onTap: () => _openLightbox(context, 0),
+                      child: Hero(
+                        tag: 'lightbox_${post.imageUrls.first}',
+                        child: _buildImage(
+                          post.imageUrls.first,
+                          width: double.infinity,
+                        ),
+                      ),
                     )
                   : SizedBox(
-                      height: 300, // Fixed height for carousel to avoid layout jumping
-                      child: PageView.builder(
-                        itemCount: post.imageUrls.length,
-                        itemBuilder: (_, i) => _buildImage(
-                          post.imageUrls[i],
-                          width: double.infinity,
-                          height: 300,
-                        ),
+                      height: 300,
+                      child: Stack(
+                        children: [
+                          PageView.builder(
+                            controller: _pageController,
+                            itemCount: post.imageUrls.length,
+                            onPageChanged: (index) {
+                              setState(() {
+                                _currentPage = index;
+                              });
+                            },
+                            itemBuilder: (context, i) {
+                              return GestureDetector(
+                                onTap: () => _openLightbox(context, i),
+                                child: Hero(
+                                  tag: 'lightbox_${post.imageUrls[i]}',
+                                  child: _buildImage(
+                                    post.imageUrls[i],
+                                    width: double.infinity,
+                                    height: 300,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                          Positioned(
+                            top: 12,
+                            right: 12,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 5),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withOpacity(0.6),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                '${_currentPage + 1} / ${post.imageUrls.length}',
+                                style: GoogleFonts.inter(
+                                  color: Colors.white,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ),
+                          if (_currentPage > 0)
+                            Positioned(
+                              left: 8,
+                              top: 0,
+                              bottom: 0,
+                              child: Center(
+                                child: GestureDetector(
+                                  onTap: () {
+                                    _pageController.previousPage(
+                                      duration: const Duration(milliseconds: 300),
+                                      curve: Curves.easeInOut,
+                                    );
+                                  },
+                                  child: Container(
+                                    width: 32,
+                                    height: 32,
+                                    decoration: BoxDecoration(
+                                      color: Colors.black.withOpacity(0.4),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(
+                                      Icons.chevron_left_rounded,
+                                      color: Colors.white,
+                                      size: 24,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          if (_currentPage < post.imageUrls.length - 1)
+                            Positioned(
+                              right: 8,
+                              top: 0,
+                              bottom: 0,
+                              child: Center(
+                                child: GestureDetector(
+                                  onTap: () {
+                                    _pageController.nextPage(
+                                      duration: const Duration(milliseconds: 300),
+                                      curve: Curves.easeInOut,
+                                    );
+                                  },
+                                  child: Container(
+                                    width: 32,
+                                    height: 32,
+                                    decoration: BoxDecoration(
+                                      color: Colors.black.withOpacity(0.4),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(
+                                      Icons.chevron_right_rounded,
+                                      color: Colors.white,
+                                      size: 24,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          Positioned(
+                            bottom: 12,
+                            left: 0,
+                            right: 0,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: List.generate(
+                                post.imageUrls.length,
+                                (index) {
+                                  final isSelected = index == _currentPage;
+                                  return AnimatedContainer(
+                                    duration: const Duration(milliseconds: 250),
+                                    margin: const EdgeInsets.symmetric(horizontal: 3),
+                                    width: isSelected ? 8.0 : 6.0,
+                                    height: isSelected ? 8.0 : 6.0,
+                                    decoration: BoxDecoration(
+                                      color: isSelected
+                                          ? Colors.white
+                                          : Colors.white.withOpacity(0.5),
+                                      shape: BoxShape.circle,
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
             ),
@@ -832,6 +1083,248 @@ class _PostCardState extends State<_PostCard> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => _CommentsSheet(post: post),
+    );
+  }
+
+  void _openLightbox(BuildContext context, int initialIndex) {
+    Navigator.push(
+      context,
+      PageRouteBuilder(
+        opaque: false,
+        transitionDuration: const Duration(milliseconds: 250),
+        reverseTransitionDuration: const Duration(milliseconds: 200),
+        pageBuilder: (context, animation, secondaryAnimation) {
+          return FadeTransition(
+            opacity: animation,
+            child: _ImageLightboxScreen(
+              imageUrls: widget.post.imageUrls,
+              initialIndex: initialIndex,
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildSingleAvatarHeader(BuildContext context, PostModel post) {
+    return Expanded(
+      child: Row(
+        children: [
+          GestureDetector(
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => UserProfileScreen(userId: post.userId),
+              ),
+            ),
+            child: CircleAvatar(
+              radius: 20,
+              backgroundColor: AppColors.accentLight,
+              backgroundImage: post.posterPhotoUrl.isNotEmpty
+                  ? NetworkImage(post.posterPhotoUrl)
+                  : null,
+              child: post.posterPhotoUrl.isEmpty
+                  ? Text(
+                      post.posterName.isNotEmpty
+                          ? post.posterName[0].toUpperCase()
+                          : '?',
+                      style: GoogleFonts.inter(
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    )
+                  : null,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        post.posterName,
+                        style: GoogleFonts.inter(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
+                          color: AppColors.textPrimary,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: post.posterResumeUrl.isEmpty
+                            ? const Color(0xFF64748B)
+                            : const Color(0xFF10B981),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        post.posterResumeUrl.isEmpty
+                            ? 'UNVERIFIED'
+                            : (post.posterRole.isNotEmpty
+                                ? post.posterRole.toUpperCase()
+                                : 'WORKER'),
+                        style: GoogleFonts.inter(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                Text(
+                  timeago.format(post.createdAt),
+                  style: GoogleFonts.inter(
+                    fontSize: 11,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDoubleAvatarHeader(BuildContext context, PostModel post) {
+    return Expanded(
+      child: Row(
+        children: [
+          // Client Avatar
+          GestureDetector(
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => UserProfileScreen(userId: post.clientId!),
+              ),
+            ),
+            child: CircleAvatar(
+              radius: 18,
+              backgroundColor: AppColors.accentLight,
+              backgroundImage: post.clientPhotoUrl.isNotEmpty
+                  ? NetworkImage(post.clientPhotoUrl)
+                  : null,
+              child: post.clientPhotoUrl.isEmpty
+                  ? Text(
+                      post.clientName.isNotEmpty ? post.clientName[0].toUpperCase() : 'C',
+                      style: GoogleFonts.inter(
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                      ),
+                    )
+                  : null,
+            ),
+          ),
+
+          // Link Sign (Chain Link)
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 6),
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withOpacity(0.1),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.link_rounded,
+              size: 14,
+              color: AppColors.primary,
+            ),
+          ),
+
+          // Worker Avatar
+          GestureDetector(
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => UserProfileScreen(userId: post.userId),
+              ),
+            ),
+            child: CircleAvatar(
+              radius: 18,
+              backgroundColor: AppColors.accentLight,
+              backgroundImage: post.posterPhotoUrl.isNotEmpty
+                  ? NetworkImage(post.posterPhotoUrl)
+                  : null,
+              child: post.posterPhotoUrl.isEmpty
+                  ? Text(
+                      post.posterName.isNotEmpty ? post.posterName[0].toUpperCase() : 'W',
+                      style: GoogleFonts.inter(
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                      ),
+                    )
+                  : null,
+            ),
+          ),
+
+          const SizedBox(width: 12),
+
+          // Text Details
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                RichText(
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                  text: TextSpan(
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      color: AppColors.textPrimary,
+                    ),
+                    children: [
+                      TextSpan(
+                        text: post.clientName,
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                      const TextSpan(text: ' hired '),
+                      TextSpan(
+                        text: post.posterName,
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.handshake_outlined,
+                      size: 12,
+                      color: Color(0xFF10B981),
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        'Completed Project • ${timeago.format(post.createdAt)}',
+                        style: GoogleFonts.inter(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w500,
+                          color: AppColors.textSecondary,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -1118,6 +1611,408 @@ class _CommentTile extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+// ─── Image Lightbox Screen ───────────────────────────────────────────────────
+
+class _ImageLightboxScreen extends StatefulWidget {
+  final List<String> imageUrls;
+  final int initialIndex;
+
+  const _ImageLightboxScreen({
+    super.key,
+    required this.imageUrls,
+    required this.initialIndex,
+  });
+
+  @override
+  State<_ImageLightboxScreen> createState() => _ImageLightboxScreenState();
+}
+
+class _ImageLightboxScreenState extends State<_ImageLightboxScreen> with SingleTickerProviderStateMixin {
+  late PageController _pageController;
+  late int _currentPage;
+  bool _isZoomed = false;
+  int _activePointers = 0;
+  bool _isPinching = false;
+
+  void _updatePointerCount(int delta) {
+    setState(() {
+      _activePointers = (_activePointers + delta).clamp(0, 99);
+      _isPinching = _activePointers > 1;
+    });
+  }
+
+  double _dragOffset = 0.0;
+  double _bgOpacity = 1.0;
+  late AnimationController _dismissAnimationController;
+  Animation<double>? _dragOffsetAnimation;
+  Animation<double>? _bgOpacityAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentPage = widget.initialIndex;
+    _pageController = PageController(initialPage: widget.initialIndex);
+    _dismissAnimationController = AnimationController(
+      vsync: this,
+    );
+    _dismissAnimationController.addListener(() {
+      if (_dragOffsetAnimation != null && _bgOpacityAnimation != null) {
+        setState(() {
+          _dragOffset = _dragOffsetAnimation!.value;
+          _bgOpacity = _bgOpacityAnimation!.value;
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    _dismissAnimationController.dispose();
+    super.dispose();
+  }
+
+  void _onVerticalDragUpdate(DragUpdateDetails details) {
+    if (_isZoomed) return;
+    setState(() {
+      _dragOffset = (_dragOffset + details.delta.dy).clamp(0.0, double.infinity);
+      _bgOpacity = (1.0 - (_dragOffset / 400.0)).clamp(0.0, 1.0);
+    });
+  }
+
+  void _onVerticalDragEnd(DragEndDetails details) {
+    if (_isZoomed) return;
+
+    if (_dragOffset > 100 || details.velocity.pixelsPerSecond.dy > 500) {
+      // Dismiss
+      _dragOffsetAnimation = Tween<double>(
+        begin: _dragOffset,
+        end: MediaQuery.of(context).size.height,
+      ).animate(
+        CurvedAnimation(parent: _dismissAnimationController, curve: Curves.easeOut),
+      );
+      _bgOpacityAnimation = Tween<double>(
+        begin: _bgOpacity,
+        end: 0.0,
+      ).animate(
+        CurvedAnimation(parent: _dismissAnimationController, curve: Curves.easeOut),
+      );
+      _dismissAnimationController.duration = const Duration(milliseconds: 200);
+      _dismissAnimationController.forward(from: 0.0).then((_) {
+        Navigator.pop(context);
+      });
+    } else {
+      // Snap back
+      _dragOffsetAnimation = Tween<double>(
+        begin: _dragOffset,
+        end: 0.0,
+      ).animate(
+        CurvedAnimation(parent: _dismissAnimationController, curve: Curves.easeOut),
+      );
+      _bgOpacityAnimation = Tween<double>(
+        begin: _bgOpacity,
+        end: 1.0,
+      ).animate(
+        CurvedAnimation(parent: _dismissAnimationController, curve: Curves.easeOut),
+      );
+      _dismissAnimationController.duration = const Duration(milliseconds: 200);
+      _dismissAnimationController.forward(from: 0.0);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black.withOpacity(_bgOpacity),
+      body: Listener(
+        onPointerDown: (event) => _updatePointerCount(1),
+        onPointerUp: (event) => _updatePointerCount(-1),
+        onPointerCancel: (event) => _updatePointerCount(-1),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onVerticalDragUpdate: (_isZoomed || _isPinching) ? null : _onVerticalDragUpdate,
+          onVerticalDragEnd: (_isZoomed || _isPinching) ? null : _onVerticalDragEnd,
+          child: Stack(
+            children: [
+              // PageView
+              Positioned.fill(
+                child: Transform.translate(
+                  offset: Offset(0.0, _dragOffset),
+                  child: PageView.builder(
+                    controller: _pageController,
+                    itemCount: widget.imageUrls.length,
+                    physics: (_isZoomed || _isPinching)
+                        ? const NeverScrollableScrollPhysics()
+                        : const BouncingScrollPhysics(),
+                    onPageChanged: (index) {
+                      setState(() {
+                        _currentPage = index;
+                      });
+                    },
+                    itemBuilder: (context, i) {
+                      return _LightboxImageItem(
+                        imageUrl: widget.imageUrls[i],
+                        onZoomChanged: (zoomed) {
+                          setState(() {
+                            _isZoomed = zoomed;
+                          });
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ),
+
+              // Close Button
+              Positioned(
+                top: MediaQuery.of(context).padding.top + 10,
+                left: 16,
+                child: GestureDetector(
+                  onTap: () => Navigator.pop(context),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.5),
+                      shape: BoxShape.circle,
+                    ),
+                    padding: const EdgeInsets.all(8),
+                    child: const Icon(Icons.close_rounded, color: Colors.white, size: 24),
+                  ),
+                ),
+              ),
+
+              // Page Indicator Pill
+              if (widget.imageUrls.length > 1)
+                Positioned(
+                  top: MediaQuery.of(context).padding.top + 14,
+                  right: 16,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.5),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Text(
+                      '${_currentPage + 1} / ${widget.imageUrls.length}',
+                      style: GoogleFonts.inter(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+
+              // Navigation Chevrons
+              if (widget.imageUrls.length > 1 && !_isZoomed) ...[
+                if (_currentPage > 0)
+                  Positioned(
+                    left: 16,
+                    top: 0,
+                    bottom: 0,
+                    child: Center(
+                      child: GestureDetector(
+                        onTap: () {
+                          _pageController.previousPage(
+                            duration: const Duration(milliseconds: 300),
+                            curve: Curves.easeInOut,
+                          );
+                        },
+                        child: Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: Colors.black.withOpacity(0.4),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.chevron_left_rounded,
+                            color: Colors.white,
+                            size: 32,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                if (_currentPage < widget.imageUrls.length - 1)
+                  Positioned(
+                    right: 16,
+                    top: 0,
+                    bottom: 0,
+                    child: Center(
+                      child: GestureDetector(
+                        onTap: () {
+                          _pageController.nextPage(
+                            duration: const Duration(milliseconds: 300),
+                            curve: Curves.easeInOut,
+                          );
+                        },
+                        child: Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: Colors.black.withOpacity(0.4),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.chevron_right_rounded,
+                            color: Colors.white,
+                            size: 32,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Lightbox Image Item (Pinch/Double-tap Zoom) ──────────────────────────────
+
+class _LightboxImageItem extends StatefulWidget {
+  final String imageUrl;
+  final ValueChanged<bool> onZoomChanged;
+
+  const _LightboxImageItem({
+    super.key,
+    required this.imageUrl,
+    required this.onZoomChanged,
+  });
+
+  @override
+  State<_LightboxImageItem> createState() => _LightboxImageItemState();
+}
+
+class _LightboxImageItemState extends State<_LightboxImageItem> with SingleTickerProviderStateMixin {
+  late TransformationController _transformationController;
+  late AnimationController _animationController;
+  Animation<Matrix4>? _zoomAnimation;
+  TapDownDetails? _doubleTapDetails;
+
+  @override
+  void initState() {
+    super.initState();
+    _transformationController = TransformationController();
+    _transformationController.addListener(_onTransformationChanged);
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 250),
+    );
+  }
+
+  void _onTransformationChanged() {
+    final matrix = _transformationController.value;
+    final scale = matrix.storage[0];
+    final isZoomed = scale > 1.001;
+    widget.onZoomChanged(isZoomed);
+  }
+
+  @override
+  void dispose() {
+    _transformationController.removeListener(_onTransformationChanged);
+    _transformationController.dispose();
+    _animationController.dispose();
+    super.dispose();
+  }
+
+  void _handleDoubleTap() {
+    if (_animationController.isAnimating) return;
+
+    final initialMatrix = _transformationController.value;
+    final Matrix4 targetMatrix;
+
+    if (initialMatrix.isIdentity()) {
+      final double scale = 2.5;
+      if (_doubleTapDetails != null) {
+        final position = _doubleTapDetails!.localPosition;
+        targetMatrix = Matrix4.translationValues(
+              -position.dx * (scale - 1),
+              -position.dy * (scale - 1),
+              0.0,
+            ) *
+            Matrix4.diagonal3Values(scale, scale, 1.0);
+      } else {
+        targetMatrix = Matrix4.diagonal3Values(scale, scale, 1.0);
+      }
+    } else {
+      targetMatrix = Matrix4.identity();
+    }
+
+    _zoomAnimation = Matrix4Tween(
+      begin: initialMatrix,
+      end: targetMatrix,
+    ).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
+    );
+
+    _animationController.addListener(_handleAnimationUpdate);
+    _animationController.forward(from: 0.0).then((_) {
+      _animationController.removeListener(_handleAnimationUpdate);
+    });
+  }
+
+  void _handleAnimationUpdate() {
+    if (_zoomAnimation != null) {
+      _transformationController.value = _zoomAnimation!.value;
+    }
+  }
+
+  Widget _buildImage(String source, {required double width, double? height}) {
+    try {
+      if (source.startsWith('http')) {
+        return Image.network(
+          source,
+          width: width,
+          height: height,
+          fit: height == null ? BoxFit.contain : BoxFit.cover,
+          errorBuilder: (_, __, ___) => _errorContainer(height ?? 200),
+        );
+      } else {
+        return Image.memory(
+          base64Decode(source),
+          width: width,
+          height: height,
+          fit: height == null ? BoxFit.contain : BoxFit.cover,
+          errorBuilder: (_, __, ___) => _errorContainer(height ?? 200),
+        );
+      }
+    } catch (_) {
+      return _errorContainer(height ?? 200);
+    }
+  }
+
+  Widget _errorContainer(double height) {
+    return Container(
+      height: height,
+      color: AppColors.surfaceDark,
+      child: const Icon(Icons.broken_image_outlined, color: AppColors.textHint, size: 40),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onDoubleTapDown: (details) => _doubleTapDetails = details,
+      onDoubleTap: _handleDoubleTap,
+      child: InteractiveViewer(
+        transformationController: _transformationController,
+        minScale: 1.0,
+        maxScale: 4.0,
+        child: Center(
+          child: Hero(
+            tag: 'lightbox_${widget.imageUrl}',
+            child: _buildImage(widget.imageUrl, width: double.infinity),
+          ),
+        ),
+      ),
     );
   }
 }

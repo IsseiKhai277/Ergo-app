@@ -13,6 +13,7 @@ import '../messages/chat_screen.dart';
 import '../../services/chat_service.dart';
 import 'active_job_screen.dart';
 import 'job_completion_screen.dart';
+import 'job_calendar_screen.dart';
 
 /// The "My Jobs" screen — ProLink style.
 ///
@@ -37,8 +38,10 @@ class _MyJobsScreenState extends State<MyJobsScreen>
 
   final _filterOptions = ['Active', 'All', 'Offered', 'Accepted', 'Completed'];
 
-  Color get _themeColor => _viewMode == 'client' ? const Color(0xFF6B4EFF) : AppColors.primary;
-  Color get _accentColor => _viewMode == 'client' ? const Color(0xFFF3E8FF) : AppColors.accentLight;
+  Color get _themeColor =>
+      _viewMode == 'client' ? const Color(0xFF6B4EFF) : AppColors.primary;
+  Color get _accentColor =>
+      _viewMode == 'client' ? const Color(0xFFF3E8FF) : AppColors.accentLight;
 
   // ── Lifecycle ──────────────────────────────────────────────────────────────
   @override
@@ -98,6 +101,7 @@ class _MyJobsScreenState extends State<MyJobsScreen>
               scrolledUnderElevation: 1,
               shadowColor: AppColors.cardBorder,
               title: Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   CircleAvatar(
                     radius: 18,
@@ -124,6 +128,18 @@ class _MyJobsScreenState extends State<MyJobsScreen>
                 ],
               ),
               actions: [
+                IconButton(
+                  icon: Icon(Icons.calendar_month_rounded, color: _themeColor),
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => JobCalendarScreen(viewMode: _viewMode),
+                      ),
+                    );
+                  },
+                  tooltip: 'Job Calendar',
+                ),
                 IconButton(
                   icon: const Icon(
                     Icons.notifications_none_rounded,
@@ -191,7 +207,9 @@ class _MyJobsScreenState extends State<MyJobsScreen>
                           GestureDetector(
                             onTap: () {
                               setState(() {
-                                _viewMode = _viewMode == 'client' ? 'worker' : 'client';
+                                _viewMode = _viewMode == 'client'
+                                    ? 'worker'
+                                    : 'client';
                                 _jobStream = _viewMode == 'client'
                                     ? JobService.myPostedJobsStream
                                     : JobService.myWorkerJobsStream;
@@ -200,7 +218,9 @@ class _MyJobsScreenState extends State<MyJobsScreen>
                             child: AnimatedContainer(
                               duration: const Duration(milliseconds: 200),
                               padding: const EdgeInsets.symmetric(
-                                  horizontal: 16, vertical: 8),
+                                horizontal: 16,
+                                vertical: 8,
+                              ),
                               decoration: BoxDecoration(
                                 color: _themeColor,
                                 borderRadius: BorderRadius.circular(20),
@@ -209,7 +229,7 @@ class _MyJobsScreenState extends State<MyJobsScreen>
                                     color: Colors.black.withValues(alpha: 0.1),
                                     blurRadius: 4,
                                     offset: const Offset(0, 2),
-                                  )
+                                  ),
                                 ],
                               ),
                               child: Row(
@@ -252,7 +272,8 @@ class _MyJobsScreenState extends State<MyJobsScreen>
                           final label = _filterOptions[index];
                           final selected = _selectedFilter == label;
                           return GestureDetector(
-                            onTap: () => setState(() => _selectedFilter = label),
+                            onTap: () =>
+                                setState(() => _selectedFilter = label),
                             child: AnimatedContainer(
                               duration: const Duration(milliseconds: 180),
                               padding: const EdgeInsets.symmetric(
@@ -332,7 +353,7 @@ class _MyJobsScreenState extends State<MyJobsScreen>
                           .map(
                             (job) => Padding(
                               padding: const EdgeInsets.only(bottom: 12),
-                             child: _JobCard(
+                              child: _JobCard(
                                 job: job,
                                 isClient: _viewMode == 'client',
                                 themeColor: _themeColor,
@@ -407,9 +428,7 @@ class _MyJobsScreenState extends State<MyJobsScreen>
       // 3. Navigate to the Active Job screen.
       Navigator.push(
         context,
-        MaterialPageRoute(
-          builder: (_) => ActiveJobScreen(job: job),
-        ),
+        MaterialPageRoute(builder: (_) => ActiveJobScreen(job: job)),
       );
     } catch (e) {
       if (!context.mounted) return;
@@ -691,10 +710,8 @@ class _JobCardState extends State<_JobCard>
         'senderPhoto': job.posterPhotoUrl,
         if (job.scheduledAt != null)
           'scheduledAt': Timestamp.fromDate(job.scheduledAt!),
-        if (job.jobLatitude != null)
-          'jobLatitude': job.jobLatitude,
-        if (job.jobLongitude != null)
-          'jobLongitude': job.jobLongitude,
+        if (job.jobLatitude != null) 'jobLatitude': job.jobLatitude,
+        if (job.jobLongitude != null) 'jobLongitude': job.jobLongitude,
       };
 
       await ChatService.acceptJobOffer(
@@ -818,6 +835,7 @@ class _JobCardState extends State<_JobCard>
                               _StatusBadge(
                                 status: job.status,
                                 isClientMode: widget.isClient,
+                                counterCount: job.counterCount,
                               ),
                             ],
                           ),
@@ -1008,68 +1026,107 @@ class _JobCardState extends State<_JobCard>
                 // ── Buttons for Offered jobs ─────────────────────────────────
                 if (!isCompleted && status == 'offered') ...[
                   const SizedBox(height: 14),
-                  Row(
-                    children: [
-                      // Message button
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: widget.onMessageTap,
-                          icon: const Icon(Icons.message_outlined, size: 15),
-                          label: Text(
-                            widget.isClient
-                                ? 'Message Worker'
-                                : 'Message Client',
-                            style: GoogleFonts.inter(fontSize: 12),
+                  if (job.counterCount > 0) ...[
+                    // Counter-offered state: show a single prominent button redirecting to chat
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: widget.onMessageTap,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: widget.themeColor,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
                           ),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: AppColors.textSecondary,
-                            side: const BorderSide(color: AppColors.cardBorder),
-                            padding: const EdgeInsets.symmetric(vertical: 10),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
+                          elevation: 0,
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.sync_alt_rounded, size: 16),
+                            const SizedBox(width: 6),
+                            Text(
+                              'Counter-Offered',
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
-                            minimumSize: Size.zero,
-                          ),
+                          ],
                         ),
                       ),
-                      // Accept button (worker only)
-                      if (!widget.isClient) ...[
-                        const SizedBox(width: 10),
+                    ),
+                  ] else ...[
+                    Row(
+                      children: [
+                        // Message button
                         Expanded(
-                          child: ElevatedButton.icon(
-                            onPressed: _isAccepting ? null : () => _handleAcceptOffer(context),
-                            icon: _isAccepting
-                                ? const SizedBox(
-                                    width: 15,
-                                    height: 15,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Colors.white,
-                                    ),
-                                  )
-                                : const Icon(
-                                    Icons.check_circle_outline_rounded,
-                                    size: 15,
-                                  ),
+                          child: OutlinedButton.icon(
+                            onPressed: widget.onMessageTap,
+                            icon: const Icon(Icons.message_outlined, size: 15),
                             label: Text(
-                              _isAccepting ? 'Accepting...' : 'Accept Offer',
+                              widget.isClient
+                                  ? 'Message Worker'
+                                  : 'Message Client',
                               style: GoogleFonts.inter(fontSize: 12),
                             ),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: widget.themeColor,
-                              foregroundColor: Colors.white,
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: AppColors.textSecondary,
+                              side: const BorderSide(
+                                color: AppColors.cardBorder,
+                              ),
                               padding: const EdgeInsets.symmetric(vertical: 10),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(10),
                               ),
                               minimumSize: Size.zero,
-                              elevation: 0,
                             ),
                           ),
                         ),
+                        // Accept button (worker only)
+                        if (!widget.isClient) ...[
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: _isAccepting
+                                  ? null
+                                  : () => _handleAcceptOffer(context),
+                              icon: _isAccepting
+                                  ? const SizedBox(
+                                      width: 15,
+                                      height: 15,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : const Icon(
+                                      Icons.check_circle_outline_rounded,
+                                      size: 15,
+                                    ),
+                              label: Text(
+                                _isAccepting ? 'Accepting...' : 'Accept Offer',
+                                style: GoogleFonts.inter(fontSize: 12),
+                              ),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: widget.themeColor,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 10,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                minimumSize: Size.zero,
+                                elevation: 0,
+                              ),
+                            ),
+                          ),
+                        ],
                       ],
-                    ],
-                  ),
+                    ),
+                  ],
                 ],
               ],
             ),
@@ -1122,14 +1179,17 @@ class _JobCardState extends State<_JobCard>
 class _StatusBadge extends StatelessWidget {
   final String status;
   final bool isClientMode;
+  final int counterCount;
   const _StatusBadge({
     required this.status,
     this.isClientMode = false,
+    this.counterCount = 0,
   });
 
   @override
   Widget build(BuildContext context) {
     Color bg, fg;
+    String displayStatus = status;
     switch (status.toLowerCase()) {
       case 'active':
         if (isClientMode) {
@@ -1149,8 +1209,14 @@ class _StatusBadge extends StatelessWidget {
         fg = const Color(0xFF475569);
         break;
       case 'offered':
-        bg = const Color(0xFFF3E8FF);
-        fg = const Color(0xFF6B21A8);
+        if (counterCount > 0) {
+          bg = const Color(0xFFF1F5F9);
+          fg = const Color(0xFF475569);
+          displayStatus = 'Countered';
+        } else {
+          bg = const Color(0xFFF3E8FF);
+          fg = const Color(0xFF6B21A8);
+        }
         break;
       case 'open':
         bg = const Color(0xFFFEF3C7);
@@ -1168,7 +1234,7 @@ class _StatusBadge extends StatelessWidget {
         borderRadius: BorderRadius.circular(6),
       ),
       child: Text(
-        status[0].toUpperCase() + status.substring(1),
+        displayStatus[0].toUpperCase() + displayStatus.substring(1),
         style: GoogleFonts.inter(
           fontSize: 10,
           fontWeight: FontWeight.w700,
@@ -1184,28 +1250,34 @@ class _MetaChip extends StatelessWidget {
   final IconData icon;
   final String text;
   final Color? iconColor;
-  const _MetaChip({
-    required this.icon,
-    required this.text,
-    this.iconColor,
-  });
+  const _MetaChip({required this.icon, required this.text, this.iconColor});
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 13, color: iconColor ?? AppColors.primary),
-        const SizedBox(width: 3),
-        Text(
-          text,
-          style: GoogleFonts.inter(
-            fontSize: 11,
-            fontWeight: FontWeight.w500,
-            color: AppColors.textSecondary,
+    final screenWidth = MediaQuery.of(context).size.width;
+    final maxChipWidth = screenWidth > 400 ? screenWidth - 220 : 180.0;
+
+    return Container(
+      constraints: BoxConstraints(maxWidth: maxChipWidth),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: iconColor ?? AppColors.primary),
+          const SizedBox(width: 3),
+          Flexible(
+            child: Text(
+              text,
+              style: GoogleFonts.inter(
+                fontSize: 11,
+                fontWeight: FontWeight.w500,
+                color: AppColors.textSecondary,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

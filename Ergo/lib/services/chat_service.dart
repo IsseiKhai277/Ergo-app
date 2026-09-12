@@ -126,13 +126,45 @@ class ChatService {
 
     // Fetch sender's profile so we can store name/photo in the offer
     final senderDoc = await _db.collection('users').doc(uid).get();
-    final senderName = senderDoc.data()?['fullName'] as String? ?? '';
-    final senderPhoto = senderDoc.data()?['photoUrl'] as String? ?? '';
+    final senderData = senderDoc.data() ?? {};
+    final senderName = senderData['fullName'] as String? ?? '';
+    final senderPhoto = senderData['photoUrl'] as String? ?? '';
+    final senderRole = senderData['role'] as String? ?? 'client';
+
+    // Fetch receiver's profile to resolve details for job document
+    final receiverDoc = await _db.collection('users').doc(otherUserId).get();
+    final receiverData = receiverDoc.data() ?? {};
+    final receiverName = receiverData['fullName'] as String? ?? '';
+    final receiverPhoto = receiverData['photoUrl'] as String? ?? '';
+
+    String posterId;
+    String posterName;
+    String posterPhotoUrl;
+    String workerId;
+    String workerName;
+    String workerPhotoUrl;
+
+    if (senderRole == 'worker') {
+      posterId = otherUserId;
+      posterName = receiverName;
+      posterPhotoUrl = receiverPhoto;
+      workerId = uid;
+      workerName = senderName;
+      workerPhotoUrl = senderPhoto;
+    } else {
+      posterId = uid;
+      posterName = senderName;
+      posterPhotoUrl = senderPhoto;
+      workerId = otherUserId;
+      workerName = receiverName;
+      workerPhotoUrl = receiverPhoto;
+    }
 
     final preview = 'Job Offer: $title';
 
-    // Generate job document ID beforehand
+    // Generate references
     final jobRef = _db.collection('jobs').doc();
+    final messageRef = convRef.collection('messages').doc();
 
     final jobOfferData = <String, dynamic>{
       'jobId': jobRef.id,
@@ -152,7 +184,11 @@ class ChatService {
     if (jobLatitude != null) jobOfferData['jobLatitude'] = jobLatitude;
     if (jobLongitude != null) jobOfferData['jobLongitude'] = jobLongitude;
 
-    final messageRef = await convRef.collection('messages').add({
+    // Use a WriteBatch to make the writes atomic
+    final batch = _db.batch();
+
+    // 1. Add message
+    batch.set(messageRef, {
       'senderId': uid,
       'text': preview,
       'messageType': 'job_offer',
@@ -160,21 +196,22 @@ class ChatService {
       'sentAt': FieldValue.serverTimestamp(),
     });
 
-    // Create the Offered job post in the /jobs collection
-    await jobRef.set({
+    // 2. Create the Offered job post in the /jobs collection
+    batch.set(jobRef, {
       'id': jobRef.id,
-      'posterId': uid,
-      'posterName': senderName,
-      'posterPhotoUrl': senderPhoto,
-      'workerId': otherUserId,
-      'workerName': '',
-      'workerPhotoUrl': '',
+      'posterId': posterId,
+      'posterName': posterName,
+      'posterPhotoUrl': posterPhotoUrl,
+      'workerId': workerId,
+      'workerName': workerName,
+      'workerPhotoUrl': workerPhotoUrl,
       'title': title,
       'description': description,
       'price': price,
       'location': location,
       'status': 'offered',
       'createdAt': FieldValue.serverTimestamp(),
+      'offeredAt': FieldValue.serverTimestamp(),
       'conversationId': conversationId,
       'messageId': messageRef.id,
       if (scheduledAt != null)
@@ -183,12 +220,15 @@ class ChatService {
       if (jobLongitude != null) 'jobLongitude': jobLongitude,
     });
 
-    await convRef.update({
+    // 3. Update conversation metadata
+    batch.update(convRef, {
       'lastMessage': preview,
       'lastMessageAt': FieldValue.serverTimestamp(),
       'lastSenderId': uid,
       'unreadCount.$otherUserId': FieldValue.increment(1),
     });
+
+    await batch.commit();
   }
 
   // ─── Accept a job offer → updates /jobs + marks message accepted ──────────
@@ -200,27 +240,168 @@ class ChatService {
     final uid = _currentUid;
     debugPrint('[acceptJobOffer] uid=$uid, conversationId=$conversationId, messageId=$messageId');
 
-    // Fetch the accepting user's (worker's) profile
-    final workerDoc = await _db.collection('users').doc(uid).get();
-    final workerName = workerDoc.data()?['fullName'] as String? ?? '';
-    final workerPhoto = workerDoc.data()?['photoUrl'] as String? ?? '';
-
-    final posterId = jobOffer['senderUid'] as String? ?? '';
-    final posterName = jobOffer['senderName'] as String? ?? '';
-    final posterPhoto = jobOffer['senderPhoto'] as String? ?? '';
-    final scheduledTs = jobOffer['scheduledAt'];
-    final scheduledAt = scheduledTs is Timestamp ? scheduledTs.toDate() : null;
     final jobId = jobOffer['jobId'] as String? ?? '';
 
-    debugPrint('[acceptJobOffer] jobId=$jobId, posterId=$posterId, workerUid=$uid');
+    // ─── Resolve roles from the /jobs document (source of truth) ────────────
+    // NEVER rely on jobOffer['senderUid'] to determine who is the worker or
+    // client. The senderUid in the message card changes every time someone
+    // counter-offers (it always reflects the LAST person to counter), which
+    // causes role swaps if two parties negotiate back and forth.
+    // Instead, read posterId/workerId from the actual /jobs document, which
+    // are set once at job creation and never change.
+    String workerUid;
+    String workerName;
+    String workerPhoto;
+    String clientUid;
+    String clientName;
+    String clientPhoto;
+
+    // Fetch the accepting user's profile to resolve their role & name/photo
+    final acceptorDoc = await _db.collection('users').doc(uid).get();
+    final acceptorData = acceptorDoc.data() ?? {};
+    final acceptorRole = acceptorData['role'] as String? ?? 'worker';
+    final acceptorName = acceptorData['fullName'] as String? ?? '';
+    final acceptorPhotoUrl = acceptorData['photoUrl'] as String? ?? '';
+
+    if (jobId.isNotEmpty) {
+      // Fetch the job document to get the canonical posterId and workerId
+      final jobDoc = await _db.collection('jobs').doc(jobId).get();
+      if (jobDoc.exists) {
+        final jobData = jobDoc.data()!;
+        final docPosterId = jobData['posterId'] as String? ?? '';
+        final docWorkerId = jobData['workerId'] as String? ?? '';
+
+        if (uid == docWorkerId) {
+          // Current user is the worker
+          workerUid = uid;
+          workerName = acceptorName;
+          workerPhoto = acceptorPhotoUrl;
+          clientUid = docPosterId;
+          // Fetch client's display name/photo from DB
+          final clientDoc = await _db.collection('users').doc(clientUid).get();
+          final clientData = clientDoc.data() ?? {};
+          clientName = clientData['fullName'] as String? ?? (jobData['posterName'] as String? ?? '');
+          clientPhoto = clientData['photoUrl'] as String? ?? (jobData['posterPhotoUrl'] as String? ?? '');
+        } else {
+          // Current user is the client (poster)
+          clientUid = uid;
+          clientName = acceptorName;
+          clientPhoto = acceptorPhotoUrl;
+          workerUid = docWorkerId;
+          workerName = jobData['workerName'] as String? ?? '';
+          workerPhoto = jobData['workerPhotoUrl'] as String? ?? '';
+        }
+      } else {
+        // Job doc doesn't exist yet — fall back to role-based heuristic
+        // (This path is for very first acceptance before a job doc is created)
+        if (acceptorRole == 'worker') {
+          workerUid = uid;
+          workerName = acceptorName;
+          workerPhoto = acceptorPhotoUrl;
+          clientUid = jobOffer['senderUid'] as String? ?? '';
+          clientName = jobOffer['senderName'] as String? ?? '';
+          clientPhoto = jobOffer['senderPhoto'] as String? ?? '';
+        } else {
+          clientUid = uid;
+          clientName = acceptorName;
+          clientPhoto = acceptorPhotoUrl;
+          workerUid = jobOffer['senderUid'] as String? ?? '';
+          final workerDoc = await _db.collection('users').doc(workerUid).get();
+          final workerData = workerDoc.data() ?? {};
+          workerName = workerData['fullName'] as String? ?? '';
+          workerPhoto = workerData['photoUrl'] as String? ?? '';
+        }
+      }
+    } else {
+      // No jobId at all — fall back to role-based heuristic
+      if (acceptorRole == 'worker') {
+        workerUid = uid;
+        workerName = acceptorName;
+        workerPhoto = acceptorPhotoUrl;
+        clientUid = jobOffer['senderUid'] as String? ?? '';
+        clientName = jobOffer['senderName'] as String? ?? '';
+        clientPhoto = jobOffer['senderPhoto'] as String? ?? '';
+      } else {
+        clientUid = uid;
+        clientName = acceptorName;
+        clientPhoto = acceptorPhotoUrl;
+        workerUid = jobOffer['senderUid'] as String? ?? '';
+        final workerDoc = await _db.collection('users').doc(workerUid).get();
+        final workerData = workerDoc.data() ?? {};
+        workerName = workerData['fullName'] as String? ?? '';
+        workerPhoto = workerData['photoUrl'] as String? ?? '';
+      }
+    }
+
+    final scheduledTs = jobOffer['scheduledAt'];
+    DateTime? scheduledAt;
+    if (scheduledTs is Timestamp) {
+      scheduledAt = scheduledTs.toDate();
+    } else if (scheduledTs is DateTime) {
+      scheduledAt = scheduledTs;
+    } else if (scheduledTs is String) {
+      scheduledAt = DateTime.tryParse(scheduledTs);
+    }
+
+    debugPrint('[acceptJobOffer] resolved workerUid=$workerUid, clientUid=$clientUid');
+    debugPrint('[acceptJobOffer] parsed scheduledAt: $scheduledAt, original scheduledTs type: ${scheduledTs.runtimeType}');
+
+    // Check if worker already has another job accepted/active at around this time
+    if (scheduledAt != null && workerUid.isNotEmpty) {
+      final querySnapshot = await _db
+          .collection('jobs')
+          .where('workerId', isEqualTo: workerUid)
+          .get();
+
+      debugPrint('[acceptJobOffer] Query returned ${querySnapshot.docs.length} jobs for workerId: $workerUid');
+
+      for (final doc in querySnapshot.docs) {
+        final data = doc.data();
+        final otherId = doc.id;
+        if (jobId.isNotEmpty && otherId == jobId) continue;
+
+        final status = (data['status'] as String? ?? '').toLowerCase();
+        debugPrint('[acceptJobOffer] Checking other job $otherId: status=$status, scheduledAt=${data['scheduledAt']}');
+
+        if (status == 'accepted' ||
+            status == 'active' ||
+            status == 'arrived' ||
+            status == 'active_arrived') {
+          final otherScheduledTs = data['scheduledAt'];
+          DateTime? otherScheduledAt;
+          if (otherScheduledTs is Timestamp) {
+            otherScheduledAt = otherScheduledTs.toDate();
+          } else if (otherScheduledTs is DateTime) {
+            otherScheduledAt = otherScheduledTs;
+          } else if (otherScheduledTs is String) {
+            otherScheduledAt = DateTime.tryParse(otherScheduledTs);
+          }
+
+          if (otherScheduledAt != null) {
+            final diff = scheduledAt.difference(otherScheduledAt).inMinutes.abs();
+            debugPrint('[acceptJobOffer] time difference in minutes: $diff');
+            if (diff < 60) {
+              final timeStr =
+                  '${otherScheduledAt.hour % 12 == 0 ? 12 : otherScheduledAt.hour % 12}:${otherScheduledAt.minute.toString().padLeft(2, '0')} ${otherScheduledAt.hour < 12 ? 'AM' : 'PM'}';
+              final errorMsg = (uid == workerUid)
+                  ? 'You have already accepted another job at around this time ($timeStr).'
+                  : 'This worker has already accepted another job at around this time ($timeStr).';
+              throw JobConflictException(errorMsg);
+            }
+          }
+        }
+      }
+    }
+
+    debugPrint('[acceptJobOffer] jobId=$jobId, posterId=$clientUid, workerUid=$workerUid');
 
     // Step 1: Update or create the /jobs document
     if (jobId.isNotEmpty) {
       try {
         await _db.collection('jobs').doc(jobId).update({
+          'workerId': workerUid,
           'workerName': workerName,
           'workerPhotoUrl': workerPhoto,
-          'workerId': uid,
           'status': 'accepted',
         });
         debugPrint('[acceptJobOffer] ✅ Step 1 passed: jobs update');
@@ -233,10 +414,11 @@ class ChatService {
       try {
         final newJobRef = _db.collection('jobs').doc();
         await newJobRef.set({
-          'posterId': posterId,
-          'posterName': posterName,
-          'posterPhotoUrl': posterPhoto,
-          'workerId': uid,
+          'id': newJobRef.id,
+          'posterId': clientUid,
+          'posterName': clientName,
+          'posterPhotoUrl': clientPhoto,
+          'workerId': workerUid,
           'workerName': workerName,
           'workerPhotoUrl': workerPhoto,
           'title': jobOffer['title'] ?? '',
@@ -274,6 +456,7 @@ class ChatService {
     }
   }
 
+
   // ─── Update job offer status (reject only) ────────────────────────────────
   static Future<void> updateJobOfferStatus({
     required String conversationId,
@@ -301,6 +484,142 @@ class ChatService {
     }
 
     await batch.commit();
+  }
+
+  // ─── Send a counter-offer ────────────────────────────────────────────────
+  static Future<void> sendCounterOffer({
+    required String conversationId,
+    required String messageId, // previous message being countered
+    required String jobId,
+    required double counterPrice,
+    required DateTime counterScheduledAt,
+    required int currentCounterCount,
+    required Map<String, dynamic> originalJobOffer,
+  }) async {
+    if (jobId.trim().isEmpty) {
+      throw Exception(
+        'Invalid Job ID: The job ID in this offer card is empty. '
+        'If this is an old job card, please create a new Job Offer first.',
+      );
+    }
+    try {
+      debugPrint('[sendCounterOffer] Starting counter offer flow...');
+      debugPrint('  conversationId: $conversationId');
+      debugPrint('  messageId (previous): $messageId');
+      debugPrint('  jobId: $jobId');
+      debugPrint('  counterPrice: $counterPrice');
+      debugPrint('  counterScheduledAt: $counterScheduledAt');
+      debugPrint('  currentCounterCount: $currentCounterCount');
+
+      final uid = _currentUid;
+      final convRef = _db.collection('conversations').doc(conversationId);
+
+      // Fetch the conversation doc to find the other participant dynamically.
+      // This is highly robust and avoids relying on potentially missing/corrupted
+      // senderUid/receiverUid values in legacy or updated message cards.
+      final convDoc = await convRef.get();
+      if (!convDoc.exists) {
+        throw Exception('Conversation not found: $conversationId');
+      }
+      final participantIds = List<String>.from(convDoc.data()?['participantIds'] ?? []);
+      final receiverUid = participantIds.firstWhere(
+        (id) => id != uid,
+        orElse: () => '',
+      );
+      if (receiverUid.isEmpty) {
+        throw Exception('Could not find the other participant in the conversation.');
+      }
+
+      // Fetch sender's profile so we can store name/photo in the counter offer
+      final senderDoc = await _db.collection('users').doc(uid).get();
+      final senderData = senderDoc.data() ?? {};
+      final senderName = senderData['fullName'] as String? ?? '';
+      final senderPhoto = senderData['photoUrl'] as String? ?? '';
+
+      final nextCounterCount = currentCounterCount + 1;
+      final title = originalJobOffer['title'] ?? 'Job Offer';
+      final description = originalJobOffer['description'] ?? '';
+      final location = originalJobOffer['location'] ?? '';
+      final jobLatitude = originalJobOffer['jobLatitude'];
+      final jobLongitude = originalJobOffer['jobLongitude'];
+
+      debugPrint('  receiverUid: $receiverUid, nextCounterCount: $nextCounterCount');
+
+      final preview = 'Job Counter-Offer: $title';
+
+      // Start a Firestore batch
+      final batch = _db.batch();
+
+      // 1. Mark the original message card status to 'countered' so it becomes inactive
+      final oldMsgRef = convRef.collection('messages').doc(messageId);
+      debugPrint('  Batch 1: marking old message $messageId as countered');
+      batch.update(oldMsgRef, {
+        'jobOffer.status': 'countered',
+      });
+
+      // 2. Create a NEW message card for the counter-offer
+      final newMsgRef = convRef.collection('messages').doc();
+      final newMsgId = newMsgRef.id;
+      debugPrint('  Batch 2: creating new message $newMsgId for counter-offer');
+
+      final newJobOfferData = <String, dynamic>{
+        'jobId': jobId,
+        'title': title,
+        'description': description,
+        'price': counterPrice,
+        'location': location,
+        'senderUid': uid,
+        'senderName': senderName,
+        'senderPhoto': senderPhoto,
+        'receiverUid': receiverUid,
+        'scheduledAt': Timestamp.fromDate(counterScheduledAt),
+        'counterCount': nextCounterCount,
+        'status': null, // pending (action buttons visible to receiver)
+      };
+      if (jobLatitude != null) newJobOfferData['jobLatitude'] = jobLatitude;
+      if (jobLongitude != null) newJobOfferData['jobLongitude'] = jobLongitude;
+
+      batch.set(newMsgRef, {
+        'senderId': uid,
+        'text': preview,
+        'messageType': 'job_offer',
+        'jobOffer': newJobOfferData,
+        'sentAt': FieldValue.serverTimestamp(),
+      });
+
+      // 3. Update job post document in /jobs/{jobId} to point to the new offer details
+      // CRITICAL: We do NOT update posterId, posterName, posterPhotoUrl,
+      // workerId, workerName, or workerPhotoUrl here. Once a job is created,
+      // the client (poster) and worker roles are fixed and should never change.
+      // This protects the document from role corruption/same-person bugs.
+      final jobRef = _db.collection('jobs').doc(jobId);
+      debugPrint('  Batch 3: updating job $jobId details to point to new message $newMsgId');
+      batch.update(jobRef, {
+        'price': counterPrice,
+        'scheduledAt': Timestamp.fromDate(counterScheduledAt),
+        'status': 'offered',
+        'offeredAt': FieldValue.serverTimestamp(),
+        'counterCount': nextCounterCount,
+        'messageId': newMsgId, // point to the new counter offer message card
+      });
+
+      // 4. Update conversation metadata
+      debugPrint('  Batch 4: updating conversation unread count and lastMessage');
+      batch.update(convRef, {
+        'lastMessage': preview,
+        'lastMessageAt': FieldValue.serverTimestamp(),
+        'lastSenderId': uid,
+        'unreadCount.$receiverUid': FieldValue.increment(1),
+      });
+
+      debugPrint('[sendCounterOffer] Committing Firestore batch...');
+      await batch.commit();
+      debugPrint('[sendCounterOffer] ✅ Batch committed successfully!');
+    } catch (e, stack) {
+      debugPrint('[sendCounterOffer] ❌ ERROR committing batch: $e');
+      debugPrintStack(stackTrace: stack);
+      rethrow;
+    }
   }
 
   // ─── Mark conversation as read for current user ───────────────────────────
@@ -350,5 +669,13 @@ class ChatService {
       });
     }
   }
+}
+
+class JobConflictException implements Exception {
+  final String message;
+  JobConflictException(this.message);
+
+  @override
+  String toString() => message;
 }
 

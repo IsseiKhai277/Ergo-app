@@ -189,12 +189,16 @@ class _MainScreenState extends State<MainScreen> {
       color = const Color(0xFF6B4EFF);
     }
 
-    if (senderId.isNotEmpty) {
-      final profile = await AuthService.getUserProfile(senderId);
-      if (profile != null) {
-        name = profile['fullName'] as String? ?? profile['name'] as String?;
-        photoUrl = profile['photoUrl'] as String? ?? profile['photoURL'] as String?;
+    try {
+      if (senderId.isNotEmpty) {
+        final profile = await AuthService.getUserProfile(senderId);
+        if (profile != null) {
+          name = profile['fullName'] as String? ?? profile['name'] as String?;
+          photoUrl = profile['photoUrl'] as String? ?? profile['photoURL'] as String?;
+        }
       }
+    } catch (e) {
+      debugPrint('[MainScreen] Error fetching user profile for notification: $e');
     }
 
     if (!mounted) return;

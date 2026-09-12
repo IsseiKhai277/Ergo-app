@@ -34,7 +34,7 @@ class FeedPostService {
       try {
         final file = imageFiles[i];
         final fileName = '${DateTime.now().millisecondsSinceEpoch}_$i.jpg';
-        final storageRef = _storage.ref().child('posts').child(postId).child(fileName);
+        final storageRef = _storage.ref().child('posts').child(user.uid).child(postId).child(fileName);
         
         final uploadTask = await storageRef.putFile(file);
         final downloadUrl = await uploadTask.ref.getDownloadURL();
@@ -66,10 +66,28 @@ class FeedPostService {
     if (user == null) throw Exception('Not authenticated');
 
     final doc = await _firestore.collection('posts').doc(postId).get();
-    if (doc.exists && doc.data()?['userId'] == user.uid) {
+    if (!doc.exists) throw Exception('Post not found');
+
+    final data = doc.data()!;
+    final postUserId = data['userId'] as String? ?? '';
+    final clientId = data['clientId'] as String? ?? '';
+    final jobId = data['jobId'] as String? ?? '';
+
+    final bool isAuthorized;
+    if (clientId.isNotEmpty) {
+      // Job completion post: only the client who posted it can delete it
+      isAuthorized = (user.uid == clientId);
+    } else {
+      // Regular post: only the creator (userId) can delete it
+      isAuthorized = (user.uid == postUserId);
+    }
+
+    if (isAuthorized) {
       // 1. Delete associated images from Firebase Storage
       try {
-        final listResult = await _storage.ref().child('posts').child(postId).listAll();
+        final userId = postUserId.isNotEmpty ? postUserId : user.uid;
+        final folderId = jobId.isNotEmpty ? jobId : postId;
+        final listResult = await _storage.ref().child('posts').child(userId).child(folderId).listAll();
         for (final item in listResult.items) {
           await item.delete();
         }
@@ -117,13 +135,28 @@ class FeedPostService {
         // Check if current user has liked this post
         bool isLiked = false;
         if (currentUid.isNotEmpty) {
-          final likeDoc = await _firestore
-              .collection('posts')
-              .doc(post.postId)
-              .collection('likes')
-              .doc(currentUid)
-              .get();
-          isLiked = likeDoc.exists;
+          try {
+            final likeDoc = await _firestore
+                .collection('posts')
+                .doc(post.postId)
+                .collection('likes')
+                .doc(currentUid)
+                .get();
+            isLiked = likeDoc.exists;
+          } catch (e) {
+            debugPrint('[FeedPostService] Error checking liked state: $e');
+          }
+        }
+
+        String clientName = '';
+        String clientPhotoUrl = '';
+        if (post.clientId != null && post.clientId!.isNotEmpty) {
+          final clientData =
+              await FeedUserResolverService.getUserById(post.clientId!);
+          if (clientData != null) {
+            clientName = clientData['fullName'] ?? clientData['name'] ?? 'Client';
+            clientPhotoUrl = clientData['photoUrl'] ?? clientData['photoURL'] ?? '';
+          }
         }
 
         posts.add(post.copyWith(
@@ -132,6 +165,9 @@ class FeedPostService {
           posterRole: userData?['role'] ?? '',
           posterRating: (userData?['rating'] ?? 0.0).toDouble(),
           posterResumeUrl: userData?['resumeUrl'] as String? ?? '',
+          posterVerified: userData?['verified'] == true,
+          clientName: clientName,
+          clientPhotoUrl: clientPhotoUrl,
           isLikedByCurrentUser: isLiked,
         ));
       }
@@ -149,12 +185,26 @@ class FeedPostService {
     final post = PostModel.fromMap(doc.data()!, doc.id);
     final userData = await FeedUserResolverService.getUserById(post.userId);
 
+    String clientName = '';
+    String clientPhotoUrl = '';
+    if (post.clientId != null && post.clientId!.isNotEmpty) {
+      final clientData =
+          await FeedUserResolverService.getUserById(post.clientId!);
+      if (clientData != null) {
+        clientName = clientData['fullName'] ?? clientData['name'] ?? 'Client';
+        clientPhotoUrl = clientData['photoUrl'] ?? clientData['photoURL'] ?? '';
+      }
+    }
+
     return post.copyWith(
       posterName: userData?['fullName'] ?? 'Unknown',
       posterPhotoUrl: userData?['photoUrl'] ?? '',
       posterRole: userData?['role'] ?? '',
       posterRating: (userData?['rating'] ?? 0.0).toDouble(),
       posterResumeUrl: userData?['resumeUrl'] as String? ?? '',
+      posterVerified: userData?['verified'] == true,
+      clientName: clientName,
+      clientPhotoUrl: clientPhotoUrl,
     );
   }
 

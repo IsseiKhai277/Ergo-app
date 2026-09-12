@@ -251,6 +251,84 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  // ─── Plain Resume Delete ───────────────────────────────────────────────────
+  Future<void> _handleResumeDelete() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          'Delete Resume?',
+          style: GoogleFonts.manrope(
+            fontWeight: FontWeight.w700,
+            color: AppColors.textPrimary,
+          ),
+        ),
+        content: Text(
+          'Are you sure you want to delete your uploaded resume? This action cannot be undone.',
+          style: GoogleFonts.inter(color: AppColors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.inter(color: AppColors.textSecondary),
+            ),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.error,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              minimumSize: Size.zero,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(
+              'Delete',
+              style: GoogleFonts.inter(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const _LoadingDialog(message: 'Deleting resume...'),
+    );
+
+    final provider = context.read<ProfileProvider>();
+    final success = await provider.deleteResume();
+
+    if (!mounted) return;
+    Navigator.pop(context); // close loading dialog
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          success
+              ? 'Resume deleted successfully!'
+              : (provider.errorMessage ?? 'Failed to delete resume.'),
+        ),
+        backgroundColor: success ? AppColors.success : AppColors.error,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        margin: const EdgeInsets.all(16),
+      ),
+    );
+  }
+
   // ─── Skill Confirmation Modal ──────────────────────────────────────────────
   void _showSkillConfirmationModal(List<String> suggestedSkills) {
     final selectedSkills = List<String>.from(suggestedSkills);
@@ -1008,6 +1086,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     minimumSize: Size.zero,
                   ),
                   child: const Text('Replace', style: TextStyle(fontSize: 13)),
+                ),
+                const SizedBox(width: 14),
+                TextButton(
+                  onPressed: _handleResumeDelete,
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppColors.error,
+                    padding: EdgeInsets.zero,
+                    minimumSize: Size.zero,
+                  ),
+                  child: const Text('Delete', style: TextStyle(fontSize: 13)),
                 ),
               ],
             )

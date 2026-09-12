@@ -471,35 +471,49 @@ class _ConversationTile extends StatelessWidget {
                           Expanded(
                             child: Row(
                               children: [
-                                Text(
-                                  name,
-                                  style: GoogleFonts.inter(
-                                    fontWeight: unread > 0
-                                        ? FontWeight.w700
-                                        : FontWeight.w600,
-                                    fontSize: 14,
-                                    color: AppColors.textPrimary,
+                                Flexible(
+                                  child: Text(
+                                    name,
+                                    style: GoogleFonts.inter(
+                                      fontWeight: unread > 0
+                                          ? FontWeight.w700
+                                          : FontWeight.w600,
+                                      fontSize: 14,
+                                      color: AppColors.textPrimary,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                    maxLines: 1,
                                   ),
                                 ),
                                 if (role.isNotEmpty) ...[
                                   const SizedBox(width: 6),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 6, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: AppColors.outline,
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                    child: Text(
-                                      role,
-                                      style: GoogleFonts.inter(
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.w600,
-                                        color: AppColors.textSecondary,
+                                  Builder(builder: (_) {
+                                    final isVerified = data['verified'] == true;
+                                    final tagLabel = isVerified
+                                        ? role.toUpperCase()
+                                        : 'UNVERIFIED';
+                                    final tagColor = isVerified
+                                        ? const Color(0xFF10B981) // green
+                                        : const Color(0xFF64748B); // grey
+                                    return Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: tagColor,
+                                        borderRadius: BorderRadius.circular(4),
                                       ),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
+                                      child: Text(
+                                        tagLabel,
+                                        style: GoogleFonts.inter(
+                                          fontSize: 9,
+                                          fontWeight: FontWeight.w700,
+                                          color: Colors.white,
+                                          letterSpacing: 0.5,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    );
+                                  }),
                                 ],
                               ],
                             ),

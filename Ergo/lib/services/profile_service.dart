@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -103,6 +104,25 @@ class ProfileService {
   }) async {
     await _db.collection('users').doc(uid).update({
       'resumeUrl': resumeUrl,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  // ─── Delete Resume ─────────────────────────────────────────────────────────
+  static Future<void> deleteResume({
+    required String uid,
+    required String resumeUrl,
+  }) async {
+    if (resumeUrl.isNotEmpty) {
+      try {
+        final ref = _storage.refFromURL(resumeUrl);
+        await ref.delete();
+      } catch (e) {
+        debugPrint('[ProfileService] Failed to delete resume file from Storage: $e');
+      }
+    }
+    await _db.collection('users').doc(uid).update({
+      'resumeUrl': '',
       'updatedAt': FieldValue.serverTimestamp(),
     });
   }

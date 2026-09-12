@@ -5,7 +5,6 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../services/auth_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/auth_widgets.dart';
-import 'login_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -108,6 +107,7 @@ class _RegisterScreenState extends State<RegisterScreen>
             behavior: SnackBarBehavior.floating,
           ),
         );
+        Navigator.of(context).popUntil((route) => route.isFirst);
       }
     } on FirebaseAuthException catch (e) {
       setState(() => _errorMessage = AuthService.getErrorMessage(e));
@@ -134,6 +134,9 @@ class _RegisterScreenState extends State<RegisterScreen>
 
     try {
       await AuthService.signInWithGoogle(role: UserRole.client);
+      if (mounted) {
+        Navigator.of(context).popUntil((route) => route.isFirst);
+      }
     } on FirebaseAuthException catch (e) {
       setState(() => _errorMessage = AuthService.getErrorMessage(e));
     } catch (_) {
@@ -636,12 +639,7 @@ class _RegisterScreenState extends State<RegisterScreen>
                             const TextSpan(text: 'Already have an account? '),
                             WidgetSpan(
                               child: GestureDetector(
-                                onTap: () => Navigator.pushReplacement(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => const LoginScreen(),
-                                  ),
-                                ),
+                                onTap: () => Navigator.pop(context),
                                 child: Text(
                                   'Login',
                                   style: GoogleFonts.inter(

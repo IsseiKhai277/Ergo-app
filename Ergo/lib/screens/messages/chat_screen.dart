@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -30,11 +31,24 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _msgController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  bool _isOtherUserVerified = false;
 
   @override
   void initState() {
     super.initState();
     ChatService.markAsRead(widget.conversationId);
+    _fetchOtherUserProfile();
+  }
+
+  Future<void> _fetchOtherUserProfile() async {
+    try {
+      final doc = await FirebaseFirestore.instance.collection('users').doc(widget.otherUserId).get();
+      if (doc.exists && mounted) {
+        setState(() {
+          _isOtherUserVerified = doc.data()?['verified'] == true;
+        });
+      }
+    } catch (_) {}
   }
 
   @override
@@ -120,23 +134,44 @@ class _ChatScreenState extends State<ChatScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  widget.otherUserName,
-                  style: GoogleFonts.inter(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-                if (widget.otherUserRole.isNotEmpty)
-                  Text(
-                    widget.otherUserRole,
-                    style: GoogleFonts.inter(
-                      fontSize: 11,
-                      color: AppColors.textSecondary,
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        widget.otherUserName,
+                        style: GoogleFonts.inter(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textPrimary,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                  ),
+                    if (widget.otherUserRole.isNotEmpty) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: _isOtherUserVerified
+                              ? const Color(0xFF10B981)
+                              : const Color(0xFF64748B),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          _isOtherUserVerified
+                              ? widget.otherUserRole.toUpperCase()
+                              : 'UNVERIFIED',
+                          style: GoogleFonts.inter(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
               ],
             ),
           ),
@@ -180,7 +215,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 Icon(
                   Icons.waving_hand_rounded,
                   size: 48,
-                  color: AppColors.primary.withOpacity(0.5),
+                  color: AppColors.primary.withValues(alpha: 0.5),
                 ),
                 const SizedBox(height: 12),
                 Text(
@@ -304,6 +339,82 @@ class _MessageBubble extends StatefulWidget {
 class _MessageBubbleState extends State<_MessageBubble> {
   bool _isUpdating = false;
 
+  Timer? _countdownTimer;
+  Duration _remaining = Duration.zero;
+  bool _isExpired = false;
+  bool _hasTriggeredRejection = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _startCountdownIfPending();
+  }
+
+  @override
+  void didUpdateWidget(_MessageBubble oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.message.jobOffer?['status'] !=
+            widget.message.jobOffer?['status'] ||
+        oldWidget.message.sentAt != widget.message.sentAt) {
+      _countdownTimer?.cancel();
+      _startCountdownIfPending();
+    }
+  }
+
+  void _startCountdownIfPending() {
+    if (widget.message.messageType != 'job_offer' ||
+        widget.message.jobOffer == null) {
+      return;
+    }
+    final status = widget.message.jobOffer!['status'] as String?;
+    if (status == 'accepted' || status == 'rejected' || status == 'countered') return;
+
+    final sentAt = widget.message.sentAt;
+
+    void tick() {
+      if (!mounted) return;
+      final elapsed = DateTime.now().difference(sentAt);
+      final remaining = const Duration(minutes: 30) - elapsed;
+      if (remaining.isNegative || remaining == Duration.zero) {
+        setState(() {
+          _remaining = Duration.zero;
+          _isExpired = true;
+        });
+        _countdownTimer?.cancel();
+        if (!widget.isMe && !_hasTriggeredRejection) {
+          _hasTriggeredRejection = true;
+          _respond('rejected');
+        }
+      } else {
+        setState(() {
+          _remaining = remaining;
+          _isExpired = false;
+        });
+      }
+    }
+
+    // Schedule tick after build to avoid setState-during-build errors
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        tick();
+      }
+    });
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) => tick());
+  }
+
+  String get _countdownLabel {
+    if (_isExpired) return 'Expired';
+    final m = _remaining.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final s = _remaining.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '$m:$s';
+  }
+
+  @override
+  void dispose() {
+    _countdownTimer?.cancel();
+    super.dispose();
+  }
+
   Future<void> _respond(String status) async {
     if (_isUpdating) return;
     setState(() => _isUpdating = true);
@@ -324,16 +435,23 @@ class _MessageBubbleState extends State<_MessageBubble> {
           jobOffer: widget.message.jobOffer,
         );
       }
+      if (mounted) {
+        setState(() => _isUpdating = false);
+      }
     } catch (e) {
       if (mounted) {
         setState(() => _isUpdating = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to ${status == 'accepted' ? 'accept' : 'reject'} offer: $e'),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            margin: const EdgeInsets.all(16),
+        showDialog(
+          context: context,
+          builder: (c) => AlertDialog(
+            title: Text('Failed to ${status == 'accepted' ? 'Accept' : 'Reject'} Offer'),
+            content: Text(e.toString()),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(c),
+                child: const Text('OK'),
+              ),
+            ],
           ),
         );
       }
@@ -376,7 +494,7 @@ class _MessageBubbleState extends State<_MessageBubble> {
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.04),
+                      color: Colors.black.withValues(alpha: 0.04),
                       blurRadius: 4,
                       offset: const Offset(0, 2),
                     ),
@@ -485,27 +603,17 @@ class _MessageBubbleState extends State<_MessageBubble> {
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
               color: widget.isMe
-                  ? Colors.white.withOpacity(0.2)
+                  ? Colors.white.withValues(alpha: 0.2)
                   : AppColors.accentLight,
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.attach_money_rounded,
-                  color: widget.isMe ? Colors.white : AppColors.primary,
-                  size: 16,
-                ),
-                Text(
-                  price.toStringAsFixed(2),
-                  style: GoogleFonts.inter(
-                    fontWeight: FontWeight.bold,
-                    color: widget.isMe ? Colors.white : AppColors.primary,
-                    fontSize: 14,
-                  ),
-                ),
-              ],
+            child: Text(
+              'RM ${price.toStringAsFixed(2)}',
+              style: GoogleFonts.inter(
+                fontWeight: FontWeight.bold,
+                color: widget.isMe ? Colors.white : AppColors.primary,
+                fontSize: 14,
+              ),
             ),
           ),
 
@@ -575,41 +683,59 @@ class _MessageBubbleState extends State<_MessageBubble> {
 
   Widget _buildActionArea(String? status) {
     // If already decided — show status badge (visible to both sides)
-    if (status == 'accepted' || status == 'rejected') {
+    if (status == 'accepted' || status == 'rejected' || status == 'countered') {
       final isAccepted = status == 'accepted';
+      final isRejected = status == 'rejected';
+
       return Container(
         width: double.infinity,
         padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
         decoration: BoxDecoration(
           color: isAccepted
-              ? const Color(0xFF16A34A).withOpacity(widget.isMe ? 0.25 : 0.12)
-              : const Color(0xFFDC2626).withOpacity(widget.isMe ? 0.25 : 0.12),
+              ? const Color(0xFF16A34A).withValues(alpha: widget.isMe ? 0.25 : 0.12)
+              : isRejected
+                  ? const Color(0xFFDC2626).withValues(alpha: widget.isMe ? 0.25 : 0.12)
+                  : const Color(0xFF475569).withValues(alpha: widget.isMe ? 0.25 : 0.12),
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
             color: isAccepted
-                ? const Color(0xFF4ADE80).withOpacity(0.5)
-                : const Color(0xFFFCA5A5).withOpacity(0.5),
+                ? const Color(0xFF4ADE80).withValues(alpha: 0.5)
+                : isRejected
+                    ? const Color(0xFFFCA5A5).withValues(alpha: 0.5)
+                    : const Color(0xFF94A3B8).withValues(alpha: 0.5),
           ),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
-              isAccepted ? Icons.check_circle_rounded : Icons.cancel_rounded,
+              isAccepted
+                  ? Icons.check_circle_rounded
+                  : isRejected
+                      ? Icons.cancel_rounded
+                      : Icons.sync_rounded,
               size: 16,
               color: isAccepted
                   ? const Color(0xFF4ADE80)
-                  : const Color(0xFFFCA5A5),
+                  : isRejected
+                      ? const Color(0xFFFCA5A5)
+                      : const Color(0xFF94A3B8),
             ),
             const SizedBox(width: 8),
             Text(
-              isAccepted ? 'Accepted' : 'Rejected',
+              isAccepted
+                  ? 'Accepted'
+                  : isRejected
+                      ? 'Rejected'
+                      : 'Countered',
               style: GoogleFonts.inter(
                 fontSize: 13,
                 fontWeight: FontWeight.w700,
                 color: isAccepted
                     ? const Color(0xFF4ADE80)
-                    : const Color(0xFFFCA5A5),
+                    : isRejected
+                        ? const Color(0xFFFCA5A5)
+                        : const Color(0xFF94A3B8),
               ),
             ),
           ],
@@ -617,11 +743,11 @@ class _MessageBubbleState extends State<_MessageBubble> {
       );
     }
 
-    // Sender sees "Awaiting response" — receiver sees the two action buttons
+    // Sender sees "Awaiting response" — receiver sees the two/three action buttons
     if (widget.isMe) {
       return Center(
         child: Text(
-          'Awaiting response…',
+          _isExpired ? 'Offer expired' : 'Awaiting response…',
           style: GoogleFonts.inter(
             fontSize: 12,
             color: Colors.white60,
@@ -631,7 +757,11 @@ class _MessageBubbleState extends State<_MessageBubble> {
       );
     }
 
-    // Recipient: show Accept / Reject buttons
+    // Recipient: show Accept / Reject / Counter buttons
+    final offer = widget.message.jobOffer!;
+    final counterCount = offer['counterCount'] as int? ?? 0;
+    final showCounter = counterCount < 3;
+
     return _isUpdating
         ? const Center(
             child: SizedBox(
@@ -643,80 +773,519 @@ class _MessageBubbleState extends State<_MessageBubble> {
               ),
             ),
           )
-        : Row(
+        : Column(
             children: [
-              // Reject
-              Expanded(
-                child: GestureDetector(
-                  onTap: () => _respond('rejected'),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFDC2626).withOpacity(0.12),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                        color: const Color(0xFFFCA5A5).withOpacity(0.5),
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(
-                          Icons.close_rounded,
-                          size: 15,
-                          color: Color(0xFFFCA5A5),
-                        ),
-                        const SizedBox(width: 5),
-                        Text(
-                          'Reject',
-                          style: GoogleFonts.inter(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color: const Color(0xFFFCA5A5),
-                          ),
-                        ),
-                      ],
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    _isExpired ? Icons.timer_off_rounded : Icons.timer_rounded,
+                    size: 14,
+                    color: _isExpired
+                        ? const Color(0xFFFCA5A5)
+                        : const Color(0xFF4ADE80),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    _isExpired
+                        ? 'Offer has expired'
+                        : 'Expires in $_countdownLabel',
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: _isExpired
+                          ? const Color(0xFFFCA5A5)
+                          : const Color(0xFF4ADE80),
                     ),
                   ),
-                ),
+                ],
               ),
-              const SizedBox(width: 10),
-              // Accept
-              Expanded(
-                child: GestureDetector(
-                  onTap: () => _respond('accepted'),
+              const SizedBox(height: 10),
+              if (showCounter) ...[
+                // Counter Offer Button
+                GestureDetector(
+                  onTap: _isExpired ? null : () => _showCounterOfferSheet(context, offer),
                   child: Container(
+                    width: double.infinity,
                     padding: const EdgeInsets.symmetric(vertical: 10),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF16A34A).withOpacity(0.12),
+                      color: AppColors.primary.withValues(alpha: _isExpired ? 0.05 : 0.12),
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(
-                        color: const Color(0xFF4ADE80).withOpacity(0.5),
+                        color: AppColors.primary.withValues(alpha: _isExpired ? 0.2 : 0.5),
                       ),
                     ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Icon(
-                          Icons.check_rounded,
+                        Icon(
+                          Icons.sync_alt_rounded,
                           size: 15,
-                          color: Color(0xFF4ADE80),
+                          color: AppColors.primary.withValues(alpha: _isExpired ? 0.5 : 1.0),
                         ),
                         const SizedBox(width: 5),
                         Text(
-                          'Accept',
+                          'Counter Offer',
                           style: GoogleFonts.inter(
                             fontSize: 13,
                             fontWeight: FontWeight.w700,
-                            color: const Color(0xFF4ADE80),
+                            color: AppColors.primary.withValues(alpha: _isExpired ? 0.5 : 1.0),
                           ),
                         ),
                       ],
                     ),
                   ),
                 ),
+                const SizedBox(height: 10),
+              ],
+              Row(
+                children: [
+                  // Reject
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: _isExpired ? null : () => _respond('rejected'),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        decoration: BoxDecoration(
+                          color: const Color(
+                            0xFFDC2626,
+                          ).withValues(alpha: _isExpired ? 0.05 : 0.12),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: const Color(
+                              0xFFFCA5A5,
+                            ).withValues(alpha: _isExpired ? 0.2 : 0.5),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.close_rounded,
+                              size: 15,
+                              color: const Color(
+                                0xFFFCA5A5,
+                              ).withValues(alpha: _isExpired ? 0.5 : 1.0),
+                            ),
+                            const SizedBox(width: 5),
+                            Text(
+                              'Reject',
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: const Color(
+                                  0xFFFCA5A5,
+                                ).withValues(alpha: _isExpired ? 0.5 : 1.0),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  // Accept
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: _isExpired ? null : () => _respond('accepted'),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        decoration: BoxDecoration(
+                          color: const Color(
+                            0xFF16A34A,
+                          ).withValues(alpha: _isExpired ? 0.05 : 0.12),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: const Color(
+                              0xFF4ADE80,
+                            ).withValues(alpha: _isExpired ? 0.2 : 0.5),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.check_rounded,
+                              size: 15,
+                              color: const Color(
+                                0xFF4ADE80,
+                               ).withValues(alpha: _isExpired ? 0.5 : 1.0),
+                            ),
+                            const SizedBox(width: 5),
+                            Text(
+                              'Accept',
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: const Color(
+                                  0xFF4ADE80,
+                                ).withValues(alpha: _isExpired ? 0.5 : 1.0),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ],
           );
+  }
+
+  void _showCounterOfferSheet(BuildContext context, Map<String, dynamic> offer) {
+    // Safely parse initial price to handle both double and String formats
+    double initialPrice = 0.0;
+    if (offer['price'] is num) {
+      initialPrice = (offer['price'] as num).toDouble();
+    } else if (offer['price'] is String) {
+      initialPrice = double.tryParse(offer['price'] as String) ?? 0.0;
+    }
+    final priceController = TextEditingController(text: initialPrice.toStringAsFixed(2));
+
+    DateTime? selectedDate;
+    TimeOfDay? selectedTime;
+
+    final scheduledTs = offer['scheduledAt'];
+    if (scheduledTs is Timestamp) {
+      final dt = scheduledTs.toDate();
+      selectedDate = dt;
+      selectedTime = TimeOfDay.fromDateTime(dt);
+    } else {
+      // Fallback: pre-populate with current time to avoid validation errors if timestamp is missing
+      final now = DateTime.now();
+      selectedDate = now;
+      selectedTime = TimeOfDay.fromDateTime(now);
+    }
+
+    bool isSubmitting = false;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) {
+          Future<void> pickDate() async {
+            final now = DateTime.now();
+            final picked = await showDatePicker(
+              context: ctx,
+              initialDate: selectedDate ?? now,
+              firstDate: now,
+              lastDate: now.add(const Duration(days: 365)),
+              builder: (c, child) => Theme(
+                data: Theme.of(c).copyWith(
+                  colorScheme: const ColorScheme.light(
+                    primary: AppColors.primary,
+                    onPrimary: Colors.white,
+                    surface: AppColors.surface,
+                    onSurface: AppColors.textPrimary,
+                  ),
+                  dialogBackgroundColor: AppColors.background,
+                ),
+                child: child!,
+              ),
+            );
+            if (picked != null) setSheetState(() => selectedDate = picked);
+          }
+
+          Future<void> pickTime() async {
+            final picked = await showTimePicker(
+              context: ctx,
+              initialTime: selectedTime ?? TimeOfDay.now(),
+              builder: (c, child) => Theme(
+                data: Theme.of(c).copyWith(
+                  colorScheme: const ColorScheme.light(
+                    primary: AppColors.primary,
+                    onPrimary: Colors.white,
+                    surface: AppColors.surface,
+                    onSurface: AppColors.textPrimary,
+                  ),
+                  dialogBackgroundColor: AppColors.background,
+                ),
+                child: child!,
+              ),
+            );
+            if (picked != null) setSheetState(() => selectedTime = picked);
+          }
+
+          return Container(
+            decoration: const BoxDecoration(
+              color: AppColors.background,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            padding: EdgeInsets.only(
+              left: 20,
+              right: 20,
+              top: 20,
+              bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: AppColors.outline,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  'Make a Counter Offer',
+                  style: GoogleFonts.inter(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Suggest changes to payment, date, or time.',
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                // Price input
+                Text(
+                  'Counter Price (RM)',
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: priceController,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    hintText: '0.00',
+                    prefixIcon: const Icon(Icons.attach_money_rounded, color: AppColors.textHint, size: 20),
+                    filled: true,
+                    fillColor: AppColors.surface,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                // Date & Time pickers
+                Text(
+                  'Counter Schedule',
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: pickDate,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                          decoration: BoxDecoration(
+                            color: AppColors.surface,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.calendar_today_rounded, size: 18, color: AppColors.primary),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  selectedDate != null
+                                      ? '${selectedDate!.day}/${selectedDate!.month}/${selectedDate!.year}'
+                                      : 'Pick date',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 13,
+                                    color: selectedDate != null ? AppColors.textPrimary : AppColors.textHint,
+                                    fontWeight: selectedDate != null ? FontWeight.w600 : FontWeight.normal,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: pickTime,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                          decoration: BoxDecoration(
+                            color: AppColors.surface,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.access_time_rounded, size: 18, color: AppColors.primary),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  selectedTime != null ? selectedTime!.format(ctx) : 'Pick time',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 13,
+                                    color: selectedTime != null ? AppColors.textPrimary : AppColors.textHint,
+                                    fontWeight: selectedTime != null ? FontWeight.w600 : FontWeight.normal,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                // Submit Button
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    onPressed: isSubmitting
+                        ? null
+                        : () async {
+                            final price = double.tryParse(priceController.text) ?? 0.0;
+                            if (price <= 0) {
+                              showDialog(
+                                context: ctx,
+                                builder: (c) => AlertDialog(
+                                  title: const Text('Validation Error'),
+                                  content: const Text('Please enter a valid price.'),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () => Navigator.pop(c),
+                                      child: const Text('OK'),
+                                    ),
+                                  ],
+                                ),
+                              );
+                              return;
+                            }
+                            if (selectedDate == null || selectedTime == null) {
+                              showDialog(
+                                context: ctx,
+                                builder: (c) => AlertDialog(
+                                  title: const Text('Validation Error'),
+                                  content: const Text('Please pick a counter schedule date and time.'),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () => Navigator.pop(c),
+                                      child: const Text('OK'),
+                                    ),
+                                  ],
+                                ),
+                              );
+                              return;
+                            }
+
+                            setSheetState(() => isSubmitting = true);
+
+                            try {
+                              final counterScheduledAt = DateTime(
+                                selectedDate!.year,
+                                selectedDate!.month,
+                                selectedDate!.day,
+                                selectedTime!.hour,
+                                selectedTime!.minute,
+                              );
+
+                              await ChatService.sendCounterOffer(
+                                conversationId: widget.conversationId,
+                                messageId: widget.message.id,
+                                jobId: offer['jobId'] ?? '',
+                                counterPrice: price,
+                                counterScheduledAt: counterScheduledAt,
+                                currentCounterCount: (offer['counterCount'] as num?)?.toInt() ?? 0,
+                                originalJobOffer: offer,
+                              );
+
+                              if (ctx.mounted) {
+                                Navigator.pop(ctx); // Close sheet ONLY on success
+                              }
+
+                              if (context.mounted) {
+                                showDialog(
+                                  context: context,
+                                  builder: (c) => AlertDialog(
+                                    title: const Text('Success'),
+                                    content: const Text('Counter offer sent successfully to the database!'),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () => Navigator.pop(c),
+                                        child: const Text('OK'),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }
+                            } catch (e) {
+                              setSheetState(() => isSubmitting = false);
+                              if (ctx.mounted) {
+                                showDialog(
+                                  context: ctx, // Show error dialog on top of the sheet
+                                  builder: (c) => AlertDialog(
+                                    title: const Text('Counter Offer Error'),
+                                    content: Text(e.toString()),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () => Navigator.pop(c),
+                                        child: const Text('OK'),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }
+                            } finally {
+                              if (mounted) {
+                                setState(() => _isUpdating = false);
+                              }
+                            }
+                          },
+                    child: isSubmitting
+                        ? const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                          )
+                        : Text(
+                            'Submit Counter Offer',
+                            style: GoogleFonts.inter(
+                              fontSize: 15,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
   }
 }

@@ -1,5 +1,7 @@
+import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import '../models/job_post.dart';
 
 class JobService {
@@ -106,23 +108,47 @@ class JobService {
     await _firestore.collection('jobs').doc(jobId).update({'status': status});
   }
 
+  // ─── Auto-reject an expired job offer ─────────────────────────────────────
+  /// Called client-side when the 30-minute offer window elapses.
+  static Future<void> rejectExpiredOffer(String jobId) async {
+    await _firestore.collection('jobs').doc(jobId).update({
+      'status': 'rejected',
+      'expiredAt': FieldValue.serverTimestamp(),
+    });
+  }
+
   // ─── Complete job and rate worker ──────────────────────────────────────────
   static Future<void> completeJob({
     required String jobId,
     required String workerId,
-    required String base64Photo,
+    required File imageFile,
     required String comment,
     required double rating,
   }) async {
-    // 1. Update the job document status and review info
+    final clientUid = _currentUid;
+    if (clientUid.isEmpty) {
+      throw Exception('User is not authenticated');
+    }
+
+    // 1. Upload file to Firebase Storage under the client\'s UID directory to satisfy security rules
+    final storageRef = FirebaseStorage.instance
+        .ref()
+        .child('posts')
+        .child(clientUid)
+        .child(jobId)
+        .child('completion_photo.jpg');
+    final uploadTask = await storageRef.putFile(imageFile);
+    final downloadUrl = await uploadTask.ref.getDownloadURL();
+
+    // 2. Update the job document status and review info
     await _firestore.collection('jobs').doc(jobId).update({
       'status': 'completed',
-      'completionPhoto': base64Photo,
+      'completionPhoto': downloadUrl,
       'completionDescription': comment,
       'rating': rating,
     });
 
-    // 2. Add review document to the reviews collection (allowed for client)
+    // 3. Add review document to the reviews collection (allowed for client)
     if (workerId.isNotEmpty) {
       final clientUid = _currentUid;
       String reviewerName = 'Client';
@@ -145,7 +171,7 @@ class JobService {
         'createdAt': FieldValue.serverTimestamp(),
       });
 
-      // 3. Recalculate average rating and update worker profile
+      // 4. Recalculate average rating and update worker profile
       final reviewsSnap = await _firestore
           .collection('reviews')
           .where('userId', isEqualTo: workerId)
@@ -161,6 +187,20 @@ class JobService {
         'rating': averageRating,
         'reviewCount': reviewsSnap.docs.length,
         'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      // 5. Automatically create a feed post representing the completed project
+      final postRef = _firestore.collection('posts').doc();
+      await postRef.set({
+        'postId': postRef.id,
+        'userId': workerId, // Worker is the subject of the post
+        'clientId': clientUid, // Client who completed it
+        'jobId': jobId, // Store jobId to locate the photo in storage on deletion
+        'caption': comment.trim(),
+        'imageUrls': [downloadUrl],
+        'createdAt': FieldValue.serverTimestamp(),
+        'likeCount': 0,
+        'commentCount': 0,
       });
     }
   }

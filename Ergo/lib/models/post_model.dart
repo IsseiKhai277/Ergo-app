@@ -8,6 +8,7 @@ class PostModel {
   final DateTime createdAt;
   final int likeCount;
   final int commentCount;
+  final String? clientId;
 
   // Resolved from users collection (not stored in posts)
   final String posterName;
@@ -15,6 +16,10 @@ class PostModel {
   final String posterRole;
   final double posterRating;
   final String posterResumeUrl;
+
+  final String clientName;
+  final String clientPhotoUrl;
+  final bool posterVerified; // Resolved from users collection
 
   // Runtime state (not stored in Firestore)
   final bool isLikedByCurrentUser;
@@ -27,11 +32,15 @@ class PostModel {
     required this.createdAt,
     required this.likeCount,
     required this.commentCount,
+    this.clientId,
     this.posterName = '',
     this.posterPhotoUrl = '',
     this.posterRole = '',
     this.posterRating = 0.0,
     this.posterResumeUrl = '',
+    this.clientName = '',
+    this.clientPhotoUrl = '',
+    this.posterVerified = false,
     this.isLikedByCurrentUser = false,
   });
 
@@ -44,6 +53,7 @@ class PostModel {
       createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       likeCount: (data['likeCount'] ?? 0) as int,
       commentCount: (data['commentCount'] ?? 0) as int,
+      clientId: data['clientId'] as String?,
     );
   }
 
@@ -55,6 +65,7 @@ class PostModel {
       'createdAt': FieldValue.serverTimestamp(),
       'likeCount': likeCount,
       'commentCount': commentCount,
+      if (clientId != null) 'clientId': clientId,
     };
   }
 
@@ -66,11 +77,15 @@ class PostModel {
     DateTime? createdAt,
     int? likeCount,
     int? commentCount,
+    String? clientId,
+    String? clientName,
+    String? clientPhotoUrl,
     String? posterName,
     String? posterPhotoUrl,
     String? posterRole,
     double? posterRating,
     String? posterResumeUrl,
+    bool? posterVerified,
     bool? isLikedByCurrentUser,
   }) {
     return PostModel(
@@ -81,11 +96,15 @@ class PostModel {
       createdAt: createdAt ?? this.createdAt,
       likeCount: likeCount ?? this.likeCount,
       commentCount: commentCount ?? this.commentCount,
+      clientId: clientId ?? this.clientId,
+      clientName: clientName ?? this.clientName,
+      clientPhotoUrl: clientPhotoUrl ?? this.clientPhotoUrl,
       posterName: posterName ?? this.posterName,
       posterPhotoUrl: posterPhotoUrl ?? this.posterPhotoUrl,
       posterRole: posterRole ?? this.posterRole,
       posterRating: posterRating ?? this.posterRating,
       posterResumeUrl: posterResumeUrl ?? this.posterResumeUrl,
+      posterVerified: posterVerified ?? this.posterVerified,
       isLikedByCurrentUser: isLikedByCurrentUser ?? this.isLikedByCurrentUser,
     );
   }

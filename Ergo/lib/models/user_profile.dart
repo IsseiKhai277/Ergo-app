@@ -45,11 +45,11 @@ class UserProfile {
   factory UserProfile.fromMap(Map<String, dynamic> map, String uid) {
     return UserProfile(
       uid: uid,
-      fullName: map['fullName'] as String? ?? '',
+      fullName: map['fullName'] as String? ?? map['name'] as String? ?? '',
       email: map['email'] as String? ?? '',
       phoneNumber: map['phoneNumber'] as String? ?? '',
       bio: map['bio'] as String? ?? '',
-      photoUrl: map['photoUrl'] as String? ?? '',
+      photoUrl: map['photoUrl'] as String? ?? map['photoURL'] as String? ?? '',
       skills: List<String>.from(map['skills'] as List? ?? []),
       resumeUrl: map['resumeUrl'] as String? ?? '',
       rating: (map['rating'] as num?)?.toDouble() ?? 0.0,

@@ -36,6 +36,9 @@ class SettingsScreen extends StatelessWidget {
 
     if (confirmed == true) {
       await AuthService.signOut();
+      if (context.mounted) {
+        Navigator.of(context).popUntil((route) => route.isFirst);
+      }
     }
   }
 

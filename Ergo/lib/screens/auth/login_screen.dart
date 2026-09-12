@@ -75,6 +75,7 @@ class _LoginScreenState extends State<LoginScreen>
             behavior: SnackBarBehavior.floating,
           ),
         );
+        Navigator.of(context).popUntil((route) => route.isFirst);
       }
     } on FirebaseAuthException catch (e) {
       setState(() => _errorMessage = AuthService.getErrorMessage(e));
@@ -93,6 +94,9 @@ class _LoginScreenState extends State<LoginScreen>
 
     try {
       await AuthService.signInWithGoogle(role: UserRole.client);
+      if (mounted) {
+        Navigator.of(context).popUntil((route) => route.isFirst);
+      }
     } on FirebaseAuthException catch (e) {
       setState(() => _errorMessage = AuthService.getErrorMessage(e));
     } catch (_) {

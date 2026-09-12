@@ -290,6 +290,29 @@ class ProfileProvider extends ChangeNotifier {
     }
   }
 
+  // ─── Delete Resume ────────────────────────────────────────────────────────
+  Future<bool> deleteResume() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final resumeUrl = _profile?.resumeUrl;
+    if (uid == null) return false;
+
+    _isUploadingResume = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      await ProfileService.deleteResume(uid: uid, resumeUrl: resumeUrl ?? '');
+      _isUploadingResume = false;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _errorMessage = 'Failed to delete resume: $e';
+      _isUploadingResume = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
   // ─── Extract Skills From Uploaded Resume ──────────────────────────────────
   Future<List<String>> extractSkillsFromUploadedResume() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;

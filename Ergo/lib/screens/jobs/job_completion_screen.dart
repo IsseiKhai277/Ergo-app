@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -124,15 +123,11 @@ class _JobCompletionScreenState extends State<JobCompletionScreen> {
     setState(() => _isSubmitting = true);
 
     try {
-      // 1. Read image bytes and encode to Base64 (Same mechanism as feed posting)
-      final bytes = await _imageFile!.readAsBytes();
-      final base64Photo = base64Encode(bytes);
-
-      // 2. Submit completion details and update database
+      // 1. Submit completion details and update database
       await JobService.completeJob(
         jobId: widget.job.id,
         workerId: widget.job.workerId,
-        base64Photo: base64Photo,
+        imageFile: _imageFile!,
         comment: _commentController.text.trim(),
         rating: _rating.toDouble(),
       );
